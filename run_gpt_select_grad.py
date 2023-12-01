@@ -9,10 +9,10 @@ import wandb
 from tqdm import tqdm
 from collections import deque
 
-'''
+"""
 Making a optimizer step only along those weignts,
 which grad direction is largest/smallest
-'''
+"""
 
 # import torch.nn.init as init
 
@@ -32,11 +32,11 @@ outpath = "/mnt/data2/galimzyanov/megatron/gpt2_checkpoints"
 prefix = "wiki-text-103-raw-"
 
 args = {
-    'max_seq_length': 1024,
-    'type': 'largest',
-    'optimizer': 'AdamW',#"SGD"
-    'lr': 1e-4,
-    'val_interval': 200,
+    "max_seq_length": 1024,
+    "type": "largest",
+    "optimizer": "AdamW",  # "SGD"
+    "lr": 1e-4,
+    "val_interval": 200,
     "mini_batch_size": 6,
     "batch_accum_size": 6,
     "threshold": 0.2,
@@ -77,6 +77,7 @@ def process_batch(batch):
 
     return inputs
 
+
 def filter_grad(model, mask_dict, threshold, type, apply_saved_mask):
     num_el = 0
     num_grad = 0
@@ -88,25 +89,30 @@ def filter_grad(model, mask_dict, threshold, type, apply_saved_mask):
             grad_norm = torch.mean(param_abs)
             grad_max = torch.max(param_abs)
             grad_min = torch.min(param_abs)
-            if type == 'largest':
-                thresh = grad_norm/threshold
+            if type == "largest":
+                thresh = grad_norm / threshold
                 if thresh > grad_max:
-                    thresh = (1-threshold)*grad_max
+                    thresh = (1 - threshold) * grad_max
                 mask = param_abs > thresh
-            if type == 'smallest':
-                thresh = grad_norm*threshold
+            if type == "smallest":
+                thresh = grad_norm * threshold
                 if thresh < grad_min:
-                    thresh = (1+threshold)*grad_min
+                    thresh = (1 + threshold) * grad_min
                 mask = param_abs < thresh
         else:
             mask = mask_dict[name]
         if torch.sum(mask) > 0:
             param.grad.data = param.grad.data * mask.float()
-            param.grad.data = param.grad.data/(torch.norm(param.grad.data)+0.1*grad_norm2)*grad_norm2
+            param.grad.data = (
+                param.grad.data
+                / (torch.norm(param.grad.data) + 0.1 * grad_norm2)
+                * grad_norm2
+            )
             num_grad += torch.sum(mask)
             mask_dict[name] = mask
 
-    return num_grad/num_el, mask_dict
+    return num_grad / num_el, mask_dict
+
 
 to_log = True
 batch_size = args["mini_batch_size"]
@@ -133,11 +139,12 @@ if to_log:
     wandb.define_metric("grad_part", step_metric="samples")
     wandb.config.update(args)
 
+
 def train_step(batch, model, mask_dict, optimizer, batch_accum, consumed_batches):
     inputs = batch["input_ids"].to(device)
     labels = batch["labels"].to(device)
     batch_size = inputs.shape[0]
-    consumed_samples = batch_size*consumed_batches
+    consumed_samples = batch_size * consumed_batches
     apply_saved_mask = False
 
     if batch_accum < batch_size:
@@ -150,14 +157,17 @@ def train_step(batch, model, mask_dict, optimizer, batch_accum, consumed_batches
             loss.backward()
             if consumed_samples > args["fix_mask_samples"]:
                 apply_saved_mask = True
-            grad_part, mask_dict = filter_grad(model, mask_dict, args["threshold"], args["type"], apply_saved_mask)
+            grad_part, mask_dict = filter_grad(
+                model, mask_dict, args["threshold"], args["type"], apply_saved_mask
+            )
             log_dict = {"grad_part": grad_part}
             optimizer.step()
             if to_log:
-                log_dict.update({"loss vs samples": loss.item(), "samples": consumed_samples})
+                log_dict.update(
+                    {"loss vs samples": loss.item(), "samples": consumed_samples}
+                )
                 wandb.log(log_dict, commit=True)
     else:
-
         loss = model(input_ids=inputs, labels=labels)[0]
         loss.backward()
 
@@ -166,14 +176,19 @@ def train_step(batch, model, mask_dict, optimizer, batch_accum, consumed_batches
             # if consumed_samples % (batch_accum*10) == 0:
             if consumed_samples > args["fix_mask_samples"]:
                 apply_saved_mask = True
-            grad_part, mask_dict = filter_grad(model, mask_dict, args["threshold"], args["type"], apply_saved_mask)
+            grad_part, mask_dict = filter_grad(
+                model, mask_dict, args["threshold"], args["type"], apply_saved_mask
+            )
             log_dict = {"grad_part": grad_part}
             optimizer.step()
             optimizer.zero_grad()
             if to_log:
-                log_dict.update({"loss vs samples": loss.item(), "samples": consumed_samples})
+                log_dict.update(
+                    {"loss vs samples": loss.item(), "samples": consumed_samples}
+                )
                 wandb.log(log_dict, commit=True)
     return mask_dict
+
 
 def validate(val_loader, model):
     total_eval_loss = 0
@@ -198,15 +213,28 @@ mask_dict = dict()
 for epoch in range(args["epochs"]):  # number of epochs
     for batch in tqdm(train_loader):
         consumed_batches += 1
-        consumed_samples = batch_size*consumed_batches
+        consumed_samples = batch_size * consumed_batches
         if to_log:
-            wandb.log({"batch accum vs samples": batch_accum, "samples": consumed_samples}, commit=True)
-        mask_dict = train_step(batch, model, mask_dict, optimizer, batch_accum, consumed_batches)
+            wandb.log(
+                {"batch accum vs samples": batch_accum, "samples": consumed_samples},
+                commit=True,
+            )
+        mask_dict = train_step(
+            batch, model, mask_dict, optimizer, batch_accum, consumed_batches
+        )
 
-        if (consumed_batches-1) % val_interval == 0:
+        if (consumed_batches - 1) % val_interval == 0:
             loss_val = validate(val_loader, model)
             if to_log:
-                wandb.log({"val/loss vs samples": loss_val, "samples": consumed_samples}, commit=True)
+                wandb.log(
+                    {"val/loss vs samples": loss_val, "samples": consumed_samples},
+                    commit=True,
+                )
             thr_str = str(args["threshold"]).replace(".", "_")
-            model.save_pretrained(os.path.join(outpath, f"gpt2_batch{args['batch_accum_size']}_grad_select_switch{args['fix_mask_samples']}_threshold={thr_str}_e{epoch}"))
+            model.save_pretrained(
+                os.path.join(
+                    outpath,
+                    f"gpt2_batch{args['batch_accum_size']}_grad_select_switch{args['fix_mask_samples']}_threshold={thr_str}_e{epoch}",
+                )
+            )
             model.train()

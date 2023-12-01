@@ -9,10 +9,10 @@ import wandb
 from tqdm import tqdm
 from collections import deque
 
-'''
+"""
 Making a step by each matrix step by step.
 i.e. several steps on 1 layer, than 2, than 3 
-'''
+"""
 
 # import torch.nn.init as init
 
@@ -64,6 +64,7 @@ def process_batch(batch):
 
     return inputs
 
+
 def split_parameters(model, group_size):
     param_groups = []
     current_group_params = 0
@@ -84,12 +85,14 @@ def split_parameters(model, group_size):
 
     return param_groups
 
+
 def switch_group(parameter_group, on_index, off_index=None):
     if off_index is not None:
         for param in parameter_group[off_index]:
             param.requires_grad = False
     for param in parameter_group[on_index]:
         param.requires_grad = True
+
 
 to_log = True
 batch_size = 6
@@ -108,11 +111,12 @@ if to_log:
     wandb.define_metric("val/loss vs samples", step_metric="samples")
     wandb.define_metric("grad_part", step_metric="samples")
 
+
 def train_step(batch, model, optimizer, batch_accum, consumed_batches, optimizer_step):
     inputs = batch["input_ids"].to(device)
     labels = batch["labels"].to(device)
     batch_size = inputs.shape[0]
-    consumed_samples = batch_size*consumed_batches
+    consumed_samples = batch_size * consumed_batches
 
     loss = model(input_ids=inputs, labels=labels)[0]
     loss.backward()
@@ -123,9 +127,12 @@ def train_step(batch, model, optimizer, batch_accum, consumed_batches, optimizer
         optimizer.step()
         optimizer.zero_grad()
         if to_log:
-            log_dict.update({"loss vs samples": loss.item(), "samples": consumed_samples})
+            log_dict.update(
+                {"loss vs samples": loss.item(), "samples": consumed_samples}
+            )
             wandb.log(log_dict, commit=True)
     return optimizer_step + 1
+
 
 def validate(val_loader, model):
     total_eval_loss = 0
@@ -152,7 +159,7 @@ total_params = sum(p.numel() for p in model.parameters())
 print(f"Total number of parameters: {total_params/1e6:.0f}M")
 
 # optimizer = SGD(model.parameters(), lr=1e-3)
-group_size = total_params/100
+group_size = total_params / 100
 param_groups = split_parameters(model, group_size)
 num_groups = len(param_groups)
 
@@ -160,35 +167,41 @@ num_groups = len(param_groups)
 #     {'params': param_group, 'lr': 1e-3} for param_group in param_groups
 # ])
 
-optimizers = [torch.optim.SGD(params=param_group, lr=1e-3) for param_group in param_groups]
+optimizers = [
+    torch.optim.SGD(params=param_group, lr=1e-3) for param_group in param_groups
+]
 
 consumed_batches = 0
 optimizer_step = 0
 group_index = 0
-switch_group(param_groups, on_index = group_index)
+switch_group(param_groups, on_index=group_index)
 optimizer = optimizers[group_index]
 
 for epoch in range(4):  # number of epochs
     for batch in tqdm(train_loader):
         consumed_batches += 1
-        consumed_samples = batch_size*consumed_batches
+        consumed_samples = batch_size * consumed_batches
         if to_log:
-            wandb.log({"batch accum vs samples": batch_accum, "samples": consumed_samples}, commit=True)
-
-        optimizer_step = train_step(batch, model, optimizer, batch_accum, consumed_batches, optimizer_step)
-        if optimizer_step%100==0:
-            group_index_new = (group_index + 1)%num_groups
-            switch_group(
-                param_groups,
-                on_index = group_index_new,
-                off_index = group_index
+            wandb.log(
+                {"batch accum vs samples": batch_accum, "samples": consumed_samples},
+                commit=True,
             )
+
+        optimizer_step = train_step(
+            batch, model, optimizer, batch_accum, consumed_batches, optimizer_step
+        )
+        if optimizer_step % 100 == 0:
+            group_index_new = (group_index + 1) % num_groups
+            switch_group(param_groups, on_index=group_index_new, off_index=group_index)
             optimizer = optimizers[group_index_new]
             group_index = group_index_new
 
         if consumed_batches % val_interval == 0:
             loss_val = validate(val_loader, model)
             if to_log:
-                wandb.log({"val/loss vs samples": loss_val, "samples": consumed_samples}, commit=True)
+                wandb.log(
+                    {"val/loss vs samples": loss_val, "samples": consumed_samples},
+                    commit=True,
+                )
             # model.save_pretrained(os.path.join(outpath, f"gpt2_select_grad_e{epoch}"))
             model.train()

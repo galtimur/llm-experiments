@@ -26,7 +26,7 @@ datapath = "/mnt/data2/galimzyanov/megatron/wikitext"
 outpath = "/mnt/data2/galimzyanov/megatron/gpt2_checkpoints"
 prefix = "wiki-text-103-raw-"
 
-model = GPT2LMHeadModel.from_pretrained(os.path.join(outpath, 'gpt2_batch_6_e0'))
+model = GPT2LMHeadModel.from_pretrained(os.path.join(outpath, "gpt2_batch_6_e0"))
 
 train_dataset = load_dataset(
     "json", data_files=os.path.join(datapath, prefix + "train.jsonl")
@@ -59,11 +59,13 @@ def process_batch(batch):
 
     return inputs
 
+
 grad_list = deque(maxlen=3)
 param_list = deque(maxlen=3)
 grads = dict()
 params = dict()
 g3 = dict()
+
 
 def add_3_deriv(model, g3):
     for name, param in model.named_parameters():
@@ -83,7 +85,8 @@ def add_3_deriv(model, g3):
             g3[name] = torch.clamp(g3[name], min=-100, max=100)
             g3_norm = torch.norm(g3[name])
             grad_norm = torch.norm(param.grad.data)
-            param.grad.data = param.grad.data + grad_norm / g3_norm * g3[name] #
+            param.grad.data = param.grad.data + grad_norm / g3_norm * g3[name]  #
+
 
 to_log = True
 batch_size = 6
@@ -108,11 +111,12 @@ if to_log:
     wandb.define_metric(f"batch accum vs samples", step_metric="samples")
     wandb.define_metric(f"val/loss vs samples", step_metric="samples")
 
+
 def train_step(batch, model, optimizer, batch_accum, consumed_batches):
     inputs = batch["input_ids"].to(device)
     labels = batch["labels"].to(device)
     batch_size = inputs.shape[0]
-    consumed_samples = batch_size*consumed_batches
+    consumed_samples = batch_size * consumed_batches
 
     if batch_accum < batch_size:
         split_inputs = torch.split(inputs, batch_accum, dim=0)
@@ -125,7 +129,13 @@ def train_step(batch, model, optimizer, batch_accum, consumed_batches):
             add_3_deriv(model, g3)
             optimizer.step()
             if to_log:
-                wandb.log({"loss vs samples": loss.item(), "samples": consumed_samples - batch_size + i*batch_accum}, commit=True)
+                wandb.log(
+                    {
+                        "loss vs samples": loss.item(),
+                        "samples": consumed_samples - batch_size + i * batch_accum,
+                    },
+                    commit=True,
+                )
             # wandb.log(
             #     {"loss vs samples": 1, "samples": consumed_samples - batch_size + i * batch_accum},
             #     commit=True,
@@ -139,8 +149,12 @@ def train_step(batch, model, optimizer, batch_accum, consumed_batches):
             optimizer.step()
             optimizer.zero_grad()
             if to_log:
-                wandb.log({"loss vs samples": loss.item(), "samples": consumed_samples}, commit=True)
+                wandb.log(
+                    {"loss vs samples": loss.item(), "samples": consumed_samples},
+                    commit=True,
+                )
             # wandb.log({"loss vs samples": 1, "samples": consumed_samples}, commit=True)
+
 
 def validate(val_loader, model):
     total_eval_loss = 0
@@ -164,18 +178,24 @@ consumed_batches = 0
 for epoch in range(4):  # number of epochs
     for batch in tqdm(train_loader):
         consumed_batches += 1
-        consumed_samples = batch_size*consumed_batches
-        if consumed_batches//batch_accum_step < len(batch_sizes):
-            batch_accum = batch_sizes[consumed_batches//batch_accum_step]
+        consumed_samples = batch_size * consumed_batches
+        if consumed_batches // batch_accum_step < len(batch_sizes):
+            batch_accum = batch_sizes[consumed_batches // batch_accum_step]
         else:
             batch_accum = batch_sizes[-1]
         if to_log:
-            wandb.log({"batch accum vs samples": batch_accum, "samples": consumed_samples}, commit=True)
+            wandb.log(
+                {"batch accum vs samples": batch_accum, "samples": consumed_samples},
+                commit=True,
+            )
         train_step(batch, model, optimizer, batch_accum, consumed_batches)
 
         if consumed_batches % val_interval == 0:
             loss_val = validate(val_loader, model)
             if to_log:
-                wandb.log({"val/loss vs samples": loss_val, "samples": consumed_samples}, commit=True)
+                wandb.log(
+                    {"val/loss vs samples": loss_val, "samples": consumed_samples},
+                    commit=True,
+                )
             model.save_pretrained(os.path.join(outpath, f"gpt2_alter_grad_e{epoch}"))
             model.train()
