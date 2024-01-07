@@ -157,6 +157,7 @@ def validate(val_loader, model):
     print(f"Validation loss = {val_loss:.2f}")
     return val_loss
 
+
 start_idx = 24
 for j in range(8):
     i = j + start_idx
@@ -204,6 +205,7 @@ for j in range(8):
     model.save_pretrained(
         os.path.join(
             outpath, f"gpt2_ensemble_d={config.n_embd}_batch{batch_accum}_ver{i}"
-        ))
+        )
+    )
     with open(os.path.join(outpath, f"val_loss_ver{i}_{loss_val:.2f}"), "w") as f:
         f.write(f"{loss_val}")

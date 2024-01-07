@@ -5,7 +5,7 @@ import copy
 from torch.utils.data import DataLoader
 from functools import partial
 
-from utils import track_params, filter_grad, process_batch_template, validate
+from utils import process_batch_template, validate, general_train_step
 
 # from transformers import AdamW, SGD
 from torch.optim import SGD, AdamW
@@ -71,6 +71,7 @@ test_dataset = load_dataset(
 tokenizer.padding_side = "right"
 tokenizer.pad_token = tokenizer.eos_token
 
+
 def adjust_model_mask(model, model_prev, mask_dict):
     for (_, param_prev), (name, param_curr) in zip(
         model_prev.named_parameters(), model.named_parameters()
@@ -78,7 +79,10 @@ def adjust_model_mask(model, model_prev, mask_dict):
         mask = ~mask_dict[name]
         param_curr.data[mask] = param_prev.data[mask]
 
-process_batch = partial(process_batch_template, tokenizer=tokenizer, max_seq_length=max_seq_length)
+
+process_batch = partial(
+    process_batch_template, tokenizer=tokenizer, max_seq_length=max_seq_length
+)
 train_loader = DataLoader(
     train_dataset, batch_size=batch_size, collate_fn=process_batch, shuffle=True
 )
@@ -110,67 +114,16 @@ if to_log:
     wandb.define_metric("part common", step_metric="samples")
     wandb.config.update(args)
 
-
-def train_step(
-    batch,
-    model,
-    model_start,
-    model_start1,
-    mask_dict,
-    optimizer,
-    batch_accum,
-    consumed_batches,
-    epoch,
-):
-    inputs = batch["input_ids"].to(device)
-    labels = batch["labels"].to(device)
-    attn_mask = batch["attn_mask"].to(device)
-    batch_size = inputs.shape[0]
-    consumed_samples = batch_size * consumed_batches
-
-    loss = model(input_ids=inputs, labels=labels, attention_mask=attn_mask)[0]
-    loss.backward()
-
-    if consumed_samples % batch_accum == 0:
-        log_dict = {}
-        model_prev = copy.deepcopy(model)
-        if filter_gradients:
-            grad_part, part_common, mask_dict = filter_grad(
-                model,
-                mask_dict,
-                args["threshold"],
-                args["type"],
-                apply_saved_mask=False,
-            )
-            log_dict = {"grad part": grad_part, "part common": part_common}
-        else:
-            log_dict = {}
-        optimizer.step()
-        if args["optimizer"] == "AdamW":
-            # adjust_model_mask(model, model_prev, mask_dict)
-            pass
-        dist, dist1, grad_step, std_step, std_dist = track_params(
-            model, model_start, model_prev, model_start1
-        )
-        optimizer.zero_grad()
-        if epoch == 0:
-            dist1 = 0
-        log_dict.update(
-            {
-                "distance": dist,
-                "distance from 1 epoch": dist1,
-                "grad step": grad_step,
-                "std distance": std_dist,
-                "std step": std_step,
-            }
-        )
-        if to_log:
-            log_dict.update(
-                {"loss vs samples": loss.item(), "samples": consumed_samples}
-            )
-            wandb.log(log_dict, commit=True)
-    return mask_dict
-
+train_step = partial(
+    general_train_step,
+    model=model,
+    optimizer=optimizer,
+    model_start=model_start,
+    args=args,
+    device=device,
+    filter_gradients=filter_gradients,
+    to_log=to_log,
+)
 
 # Training loop
 model.train()
@@ -189,19 +142,16 @@ for epoch in range(args["epochs"]):  # number of epochs
                 commit=True,
             )
         mask_dict = train_step(
-            batch,
-            model,
-            model_start,
-            model_start1,
-            mask_dict,
-            optimizer,
-            batch_accum,
-            consumed_batches,
-            epoch,
+            batch = batch,
+            model_start1 = model_start1,
+            mask_dict = mask_dict,
+            batch_accum = batch_accum,
+            consumed_batches = consumed_batches,
+            epoch = epoch,
         )
 
         if (consumed_batches - 0) % val_interval == 0:
-            loss_val = validate(val_loader, model)
+            loss_val = validate(val_loader, model, device)
             if to_log:
                 wandb.log(
                     {"val/loss vs samples": loss_val, "samples": consumed_samples},

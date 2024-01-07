@@ -1,4 +1,6 @@
 import torch
+import copy
+import wandb
 
 
 def filter_grad(model, mask_dict, threshold, type, apply_saved_mask):
@@ -77,6 +79,7 @@ def track_params(model, model_start, model_previous, model_start_1):
             torch.sqrt(dev_dist / num_el),
         )
 
+
 def process_batch_template(batch, tokenizer, max_seq_length):
     texts = [item["text"] for item in batch]
     inputs = tokenizer(
@@ -98,6 +101,7 @@ def process_batch_template(batch, tokenizer, max_seq_length):
 
     return inputs
 
+
 def validate(val_loader, model, device):
     total_eval_loss = 0
     model.eval()
@@ -113,3 +117,68 @@ def validate(val_loader, model, device):
     val_loss = total_eval_loss / n
     print(f"Validation loss = {val_loss:.2f}")
     return val_loss
+
+
+def general_train_step(
+    batch,
+    model,
+    model_start,
+    model_start1,
+    mask_dict,
+    optimizer,
+    batch_accum,
+    consumed_batches,
+    epoch,
+    args,
+    device,
+    filter_gradients,
+    to_log,
+):
+    inputs = batch["input_ids"].to(device)
+    labels = batch["labels"].to(device)
+    attn_mask = batch["attn_mask"].to(device)
+    batch_size = inputs.shape[0]
+    consumed_samples = batch_size * consumed_batches
+
+    loss = model(input_ids=inputs, labels=labels, attention_mask=attn_mask)[0]
+    loss.backward()
+
+    if consumed_samples % batch_accum == 0:
+        log_dict = {}
+        model_prev = copy.deepcopy(model)
+        if filter_gradients:
+            grad_part, part_common, mask_dict = filter_grad(
+                model,
+                mask_dict,
+                args["threshold"],
+                args["type"],
+                apply_saved_mask=False,
+            )
+            log_dict = {"grad part": grad_part, "part common": part_common}
+        else:
+            log_dict = {}
+        optimizer.step()
+        if args["optimizer"] == "AdamW":
+            # adjust_model_mask(model, model_prev, mask_dict)
+            pass
+        dist, dist1, grad_step, std_step, std_dist = track_params(
+            model, model_start, model_prev, model_start1
+        )
+        optimizer.zero_grad()
+        if epoch == 0:
+            dist1 = 0
+        log_dict.update(
+            {
+                "distance": dist,
+                "distance from 1 epoch": dist1,
+                "grad step": grad_step,
+                "std distance": std_dist,
+                "std step": std_step,
+            }
+        )
+        if to_log:
+            log_dict.update(
+                {"loss vs samples": loss.item(), "samples": consumed_samples}
+            )
+            wandb.log(log_dict, commit=True)
+    return mask_dict
