@@ -112,6 +112,7 @@ if to_log:
     wandb.define_metric("std step", step_metric="samples")
     wandb.define_metric("grad part", step_metric="samples")
     wandb.define_metric("part common", step_metric="samples")
+    wandb.define_metric("learning rate", step_metric="samples")
     wandb.config.update(args)
 
 train_step = partial(
@@ -129,7 +130,13 @@ train_step = partial(
 model.train()
 consumed_batches = 0
 mask_dict = dict()
+num_batches = len(train_loader)
+
 for epoch in range(args["epochs"]):  # number of epochs
+    scheduler = torch.optim.lr_scheduler.OneCycleLR(
+        optimizer, max_lr=args["lr"], pct_start=0.05, total_steps=num_batches
+    )
+
     if epoch == 1:
         print("Copying model for distance calc")
         model_start1 = copy.deepcopy(model)
@@ -138,16 +145,20 @@ for epoch in range(args["epochs"]):  # number of epochs
         consumed_samples = batch_size * consumed_batches
         if to_log:
             wandb.log(
-                {"batch accum vs samples": batch_accum, "samples": consumed_samples},
+                {
+                    "batch accum vs samples": batch_accum,
+                    "learning rate": optimizer.param_groups[0]["lr"],
+                    "samples": consumed_samples,
+                },
                 commit=True,
             )
         mask_dict = train_step(
-            batch = batch,
-            model_start1 = model_start1,
-            mask_dict = mask_dict,
-            batch_accum = batch_accum,
-            consumed_batches = consumed_batches,
-            epoch = epoch,
+            batch=batch,
+            model_start1=model_start1,
+            mask_dict=mask_dict,
+            batch_accum=batch_accum,
+            consumed_batches=consumed_batches,
+            epoch=epoch,
         )
 
         if (consumed_batches - 0) % val_interval == 0:
@@ -158,5 +169,6 @@ for epoch in range(args["epochs"]):  # number of epochs
                     commit=True,
                 )
                 model.train()
+        scheduler.step()
 
-    model.save_pretrained(os.path.join(outpath, f"gpt2_batch{batch_accum}_e{epoch}"))
+    # model.save_pretrained(os.path.join(outpath, f"gpt2_cycle_batch{batch_accum}_e{epoch}"))
