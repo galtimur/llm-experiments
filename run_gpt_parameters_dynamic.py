@@ -3,8 +3,9 @@ import os
 import torch
 import copy
 from torch.utils.data import DataLoader
+from functools import partial
 
-from utils import track_params, filter_grad
+from utils import track_params, filter_grad, process_batch_template, validate
 
 # from transformers import AdamW, SGD
 from torch.optim import SGD, AdamW
@@ -70,7 +71,6 @@ test_dataset = load_dataset(
 tokenizer.padding_side = "right"
 tokenizer.pad_token = tokenizer.eos_token
 
-
 def adjust_model_mask(model, model_prev, mask_dict):
     for (_, param_prev), (name, param_curr) in zip(
         model_prev.named_parameters(), model.named_parameters()
@@ -78,29 +78,7 @@ def adjust_model_mask(model, model_prev, mask_dict):
         mask = ~mask_dict[name]
         param_curr.data[mask] = param_prev.data[mask]
 
-
-def process_batch(batch):
-    texts = [item["text"] for item in batch]
-    inputs = tokenizer(
-        texts,
-        truncation=True,
-        padding="max_length",
-        max_length=max_seq_length,
-        return_tensors="pt",
-    )
-
-    input_ids = inputs.input_ids
-    labels = input_ids.clone().contiguous()
-    labels[labels == tokenizer.pad_token_id] = -100
-    attn_mask = labels != -100
-    inputs["labels"] = labels  # [:, 1:]
-    inputs["input_ids"] = inputs.input_ids.contiguous()  # [:, :-1]
-    inputs["labels"][inputs["input_ids"] == tokenizer.pad_token_id] = -100
-    inputs["attn_mask"] = attn_mask
-
-    return inputs
-
-
+process_batch = partial(process_batch_template, tokenizer=tokenizer, max_seq_length=max_seq_length)
 train_loader = DataLoader(
     train_dataset, batch_size=batch_size, collate_fn=process_batch, shuffle=True
 )
@@ -192,23 +170,6 @@ def train_step(
             )
             wandb.log(log_dict, commit=True)
     return mask_dict
-
-
-def validate(val_loader, model):
-    total_eval_loss = 0
-    model.eval()
-    for n, batch in enumerate(val_loader, start=1):
-        with torch.no_grad():
-            inputs = batch["input_ids"].to(device)
-            labels = batch["labels"].to(device)
-            attn_mask = batch["attn_mask"].to(device)
-
-            outputs = model(input_ids=inputs, labels=labels, attention_mask=attn_mask)
-            eval_loss = outputs[0]
-            total_eval_loss += eval_loss.item()
-    val_loss = total_eval_loss / n
-    print(f"Validation loss = {val_loss:.2f}")
-    return val_loss
 
 
 # Training loop

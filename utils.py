@@ -76,3 +76,40 @@ def track_params(model, model_start, model_previous, model_start_1):
             torch.sqrt(dev_step / num_el),
             torch.sqrt(dev_dist / num_el),
         )
+
+def process_batch_template(batch, tokenizer, max_seq_length):
+    texts = [item["text"] for item in batch]
+    inputs = tokenizer(
+        texts,
+        truncation=True,
+        padding="max_length",
+        max_length=max_seq_length,
+        return_tensors="pt",
+    )
+
+    input_ids = inputs.input_ids
+    labels = input_ids.clone().contiguous()
+    labels[labels == tokenizer.pad_token_id] = -100
+    attn_mask = labels != -100
+    inputs["labels"] = labels  # [:, 1:]
+    inputs["input_ids"] = inputs.input_ids.contiguous()  # [:, :-1]
+    inputs["labels"][inputs["input_ids"] == tokenizer.pad_token_id] = -100
+    inputs["attn_mask"] = attn_mask
+
+    return inputs
+
+def validate(val_loader, model, device):
+    total_eval_loss = 0
+    model.eval()
+    for n, batch in enumerate(val_loader, start=1):
+        with torch.no_grad():
+            inputs = batch["input_ids"].to(device)
+            labels = batch["labels"].to(device)
+            attn_mask = batch["attn_mask"].to(device)
+
+            outputs = model(input_ids=inputs, labels=labels, attention_mask=attn_mask)
+            eval_loss = outputs[0]
+            total_eval_loss += eval_loss.item()
+    val_loss = total_eval_loss / n
+    print(f"Validation loss = {val_loss:.2f}")
+    return val_loss
