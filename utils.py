@@ -1,8 +1,6 @@
 import torch
 
 
-
-
 def filter_grad(model, mask_dict, threshold, type, apply_saved_mask):
     num_el = 0
     num_grad = 0
@@ -45,17 +43,20 @@ def filter_grad(model, mask_dict, threshold, type, apply_saved_mask):
     return num_grad / num_el, num_common / num_grad, mask_dict
 
 
-def track_params(model, model_start, model_previous):
-    num_el = dist = grad_step = dev_step = sum_step = sum_dist = dev_dist = 0
-    for (name, param), (_, param_start), (_, param_prev) in zip(
+def track_params(model, model_start, model_previous, model_start_1):
+    num_el = dist = dist1 = grad_step = dev_step = sum_step = sum_dist = dev_dist = 0
+    for (name, param), (_, param_start), (_, param_prev), (_, param_start_1) in zip(
         model.named_parameters(),
         model_start.named_parameters(),
         model_previous.named_parameters(),
+        model_start_1.named_parameters(),
     ):
         dist_tensor = param.data - param_start.data
+        dist1_tensor = param.data - param_start_1.data
         step = param.data - param_prev.data
 
         dist += torch.norm(dist_tensor) ** 2
+        dist1 += torch.norm(dist1_tensor) ** 2
         grad_step += torch.norm(step) ** 2
         num_el += param.data.numel()
 
@@ -70,6 +71,7 @@ def track_params(model, model_start, model_previous):
         # grad_max = torch.max(param_abs)
         return (
             torch.sqrt(dist / num_el),
+            torch.sqrt(dist1 / num_el),
             torch.sqrt(grad_step / num_el),
             torch.sqrt(dev_step / num_el),
             torch.sqrt(dev_dist / num_el),

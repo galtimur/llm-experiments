@@ -89,8 +89,14 @@ def process_batch(batch):
         return_tensors="pt",
     )
 
-    inputs["labels"] = inputs.input_ids.contiguous()  # [:, 1:]
+    input_ids = inputs.input_ids
+    labels = input_ids.clone().contiguous()
+    labels[labels == tokenizer.pad_token_id] = -100
+    attn_mask = labels != -100
+    inputs["labels"] = labels  # [:, 1:]
     inputs["input_ids"] = inputs.input_ids.contiguous()  # [:, :-1]
+    inputs["labels"][inputs["input_ids"] == tokenizer.pad_token_id] = -100
+    inputs["attn_mask"] = attn_mask
 
     return inputs
 
@@ -103,6 +109,7 @@ val_loader = DataLoader(val_dataset, batch_size=batch_size, collate_fn=process_b
 # Move the model to the selected device
 model.to(device)
 model_start = copy.deepcopy(model)
+model_start1 = copy.deepcopy(model)
 
 if args["optimizer"] == "SGD":
     optimizer = SGD(model.parameters(), lr=args["lr"])
@@ -117,6 +124,7 @@ if to_log:
     wandb.define_metric("batch accum vs samples", step_metric="samples")
     wandb.define_metric("val/loss vs samples", step_metric="samples")
     wandb.define_metric("distance", step_metric="samples")
+    wandb.define_metric("distance from 1 epoch", step_metric="samples")
     wandb.define_metric("grad step", step_metric="samples")
     wandb.define_metric("std distance", step_metric="samples")
     wandb.define_metric("std step", step_metric="samples")
@@ -125,13 +133,24 @@ if to_log:
     wandb.config.update(args)
 
 
-def train_step(batch, model, mask_dict, optimizer, batch_accum, consumed_batches):
+def train_step(
+    batch,
+    model,
+    model_start,
+    model_start1,
+    mask_dict,
+    optimizer,
+    batch_accum,
+    consumed_batches,
+    epoch,
+):
     inputs = batch["input_ids"].to(device)
     labels = batch["labels"].to(device)
+    attn_mask = batch["attn_mask"].to(device)
     batch_size = inputs.shape[0]
     consumed_samples = batch_size * consumed_batches
 
-    loss = model(input_ids=inputs, labels=labels)[0]
+    loss = model(input_ids=inputs, labels=labels, attention_mask=attn_mask)[0]
     loss.backward()
 
     if consumed_samples % batch_accum == 0:
@@ -152,13 +171,16 @@ def train_step(batch, model, mask_dict, optimizer, batch_accum, consumed_batches
         if args["optimizer"] == "AdamW":
             # adjust_model_mask(model, model_prev, mask_dict)
             pass
-        dist, grad_step, std_step, std_dist = track_params(
-            model, model_start, model_prev
+        dist, dist1, grad_step, std_step, std_dist = track_params(
+            model, model_start, model_prev, model_start1
         )
         optimizer.zero_grad()
+        if epoch == 0:
+            dist1 = 0
         log_dict.update(
             {
                 "distance": dist,
+                "distance from 1 epoch": dist1,
                 "grad step": grad_step,
                 "std distance": std_dist,
                 "std step": std_step,
@@ -179,8 +201,9 @@ def validate(val_loader, model):
         with torch.no_grad():
             inputs = batch["input_ids"].to(device)
             labels = batch["labels"].to(device)
+            attn_mask = batch["attn_mask"].to(device)
 
-            outputs = model(input_ids=inputs, labels=labels)
+            outputs = model(input_ids=inputs, labels=labels, attention_mask=attn_mask)
             eval_loss = outputs[0]
             total_eval_loss += eval_loss.item()
     val_loss = total_eval_loss / n
@@ -193,6 +216,9 @@ model.train()
 consumed_batches = 0
 mask_dict = dict()
 for epoch in range(args["epochs"]):  # number of epochs
+    if epoch == 1:
+        print("Copying model for distance calc")
+        model_start1 = copy.deepcopy(model)
     for batch in tqdm(train_loader):
         consumed_batches += 1
         consumed_samples = batch_size * consumed_batches
@@ -202,7 +228,15 @@ for epoch in range(args["epochs"]):  # number of epochs
                 commit=True,
             )
         mask_dict = train_step(
-            batch, model, mask_dict, optimizer, batch_accum, consumed_batches
+            batch,
+            model,
+            model_start,
+            model_start1,
+            mask_dict,
+            optimizer,
+            batch_accum,
+            consumed_batches,
+            epoch,
         )
 
         if (consumed_batches - 0) % val_interval == 0:

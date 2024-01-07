@@ -24,17 +24,18 @@ device = torch.device("cuda") if torch.cuda.is_available() else torch.device("cp
 # Define the model and tokenizer
 # model = GPT2LMHeadModel.from_pretrained("gpt2")
 config = GPT2Config.from_pretrained("gpt2")
-config.n_embd = 12
+config.n_embd = 24
 config.n_head = 1
 model = GPT2LMHeadModel(config)
 tokenizer = GPT2Tokenizer.from_pretrained("gpt2")
 
+
 datapath = "/mnt/data2/galimzyanov/megatron/wikitext"
-outpath = "/mnt/data2/galimzyanov/megatron/gpt2_checkpoints"
+outpath = "/mnt/data2/galimzyanov/gpt2/checkpoints"
 prefix = "wiki-text-103-raw-"
 num_params = sum(p.numel() for p in model.parameters())
 print(f"Model size = {num_params}")
-print(f"Model size in M = {num_params//1e6:.2f}")
+print(f"Model size in M = {num_params/1e6:.2f}")
 
 args = {
     "max_seq_length": 1024,
@@ -43,15 +44,15 @@ args = {
     "val_interval": 240,
     "mini_batch_size": 24,
     "batch_accum_size": 24,
-    "epochs": 10,
+    "epochs": 4,
     "threshold": 0.2,
     "type": "largest",
     "model_size": num_params,
-    "model_size_M": f"{num_params//1e6:.2f}"
+    "model_size_M": f"{num_params/1e6:.2f}",
 }
 
 max_seq_length = args["max_seq_length"]
-to_log = True
+to_log = False
 batch_size = args["mini_batch_size"]
 batch_accum = args["batch_accum_size"]
 
@@ -92,14 +93,6 @@ train_loader = DataLoader(
 )
 val_loader = DataLoader(val_dataset, batch_size=batch_size, collate_fn=process_batch)
 
-# Move the model to the selected device
-model.to(device)
-model_start = copy.deepcopy(model)
-
-if args["optimizer"] == "SGD":
-    optimizer = SGD(model.parameters(), lr=args["lr"])
-if args["optimizer"] == "AdamW":
-    optimizer = AdamW(model.parameters(), lr=args["lr"])
 val_interval = args["val_interval"]
 
 if to_log:
@@ -117,7 +110,7 @@ if to_log:
     wandb.config.update(args)
 
 
-def train_step(batch, model, optimizer, batch_accum, consumed_batches):
+def train_step(batch, model, optimizer, batch_accum, consumed_batches, model_start):
     inputs = batch["input_ids"].to(device)
     labels = batch["labels"].to(device)
     batch_size = inputs.shape[0]
@@ -129,16 +122,19 @@ def train_step(batch, model, optimizer, batch_accum, consumed_batches):
     if consumed_samples % batch_accum == 0:
         model_prev = copy.deepcopy(model)
         optimizer.step()
-        dist, grad_step, std_step, std_dist = track_params(
-            model, model_start, model_prev
-        )
-        optimizer.zero_grad()
-        log_dict = {
-            "distance": dist,
-            "grad step": grad_step,
-            "std distance": std_dist,
-            "std step": std_step,
-        }
+        if track_params:
+            dist, grad_step, std_step, std_dist = track_params(
+                model, model_start, model_prev
+            )
+            optimizer.zero_grad()
+            log_dict = {
+                "distance": dist,
+                "grad step": grad_step,
+                "std distance": std_dist,
+                "std step": std_step,
+            }
+        else:
+            log_dict = {}
         if to_log:
             log_dict.update(
                 {"loss vs samples": loss.item(), "samples": consumed_samples}
@@ -149,8 +145,8 @@ def train_step(batch, model, optimizer, batch_accum, consumed_batches):
 def validate(val_loader, model):
     total_eval_loss = 0
     model.eval()
-    for n, batch in enumerate(val_loader, start=1):
-        with torch.no_grad():
+    with torch.no_grad():
+        for n, batch in enumerate(val_loader, start=1):
             inputs = batch["input_ids"].to(device)
             labels = batch["labels"].to(device)
 
@@ -161,28 +157,53 @@ def validate(val_loader, model):
     print(f"Validation loss = {val_loss:.2f}")
     return val_loss
 
+start_idx = 24
+for j in range(8):
+    i = j + start_idx
+    model.to(device)
+    model_start = copy.deepcopy(model)
 
-# Training loop
-model.train()
-consumed_batches = 0
-mask_dict = dict()
-for epoch in range(args["epochs"]):  # number of epochs
-    for batch in tqdm(train_loader):
-        consumed_batches += 1
-        consumed_samples = batch_size * consumed_batches
-        if to_log:
-            wandb.log(
-                {"batch accum vs samples": batch_accum, "samples": consumed_samples},
-                commit=True,
-            )
-        mask_dict = train_step(batch, model, optimizer, batch_accum, consumed_batches)
+    if args["optimizer"] == "SGD":
+        optimizer = SGD(model.parameters(), lr=args["lr"])
+    if args["optimizer"] == "AdamW":
+        optimizer = AdamW(model.parameters(), lr=args["lr"])
 
-        if (consumed_batches - 0) % val_interval == 0:
-            loss_val = validate(val_loader, model)
+    model.train()
+    consumed_batches = 0
+    mask_dict = dict()
+    for epoch in range(args["epochs"]):
+        for batch in tqdm(train_loader):
+            consumed_batches += 1
+            consumed_samples = batch_size * consumed_batches
             if to_log:
                 wandb.log(
-                    {"val/loss vs samples": loss_val, "samples": consumed_samples},
+                    {
+                        "batch accum vs samples": batch_accum,
+                        "samples": consumed_samples,
+                    },
                     commit=True,
                 )
-            model.train()
-    model.save_pretrained(os.path.join(outpath, f"gpt2_d={config.n_embd}_batch{batch_accum}_e{epoch}"))
+            mask_dict = train_step(
+                batch, model, optimizer, batch_accum, consumed_batches, model_start
+            )
+
+            # if (consumed_batches - 0) % val_interval == 0:
+            #     loss_val = validate(val_loader, model)
+            #     if to_log:
+            #         wandb.log(
+            #             {"val/loss vs samples": loss_val, "samples": consumed_samples},
+            #             commit=True,
+            #         )
+            #     model.train()
+        loss_val = validate(val_loader, model)
+        model.train()
+        print(40 * "-")
+        print(f"Model {i}")
+        print(f"Validation loss = {loss_val}")
+        print(40 * "-")
+    model.save_pretrained(
+        os.path.join(
+            outpath, f"gpt2_ensemble_d={config.n_embd}_batch{batch_accum}_ver{i}"
+        ))
+    with open(os.path.join(outpath, f"val_loss_ver{i}_{loss_val:.2f}"), "w") as f:
+        f.write(f"{loss_val}")
