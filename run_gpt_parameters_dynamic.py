@@ -115,6 +115,9 @@ if to_log:
     wandb.define_metric("part common", step_metric="samples")
     wandb.define_metric("learning rate", step_metric="samples")
     wandb.define_metric("loss change", step_metric="samples")
+    wandb.define_metric("weight L1 norm", step_metric="samples")
+    wandb.define_metric("weight L2 norm", step_metric="samples")
+
     wandb.config.update(args)
 
 train_step = partial(
@@ -144,7 +147,7 @@ for epoch in range(args["epochs"]):  # number of epochs
         max_lr=args["lr"],
         pct_start=0.05,
         total_steps=num_batches,
-        cycle_momentum = False,
+        cycle_momentum=False,
     )
     for batch in tqdm(train_loader):
         consumed_batches += 1

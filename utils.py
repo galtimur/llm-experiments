@@ -46,7 +46,11 @@ def filter_grad(model, mask_dict, threshold, type, apply_saved_mask):
 
 
 def track_params(model, model_start, model_previous, model_start_1):
-    num_el = dist = dist1 = grad_step = dev_step = sum_step = sum_dist = dev_dist = 0
+    num_el = (
+        l2norm
+    ) = (
+        l1norm
+    ) = dist = dist1 = grad_step = dev_step = sum_step = sum_dist = dev_dist = 0
     for (name, param), (_, param_start), (_, param_prev), (_, param_start_1) in zip(
         model.named_parameters(),
         model_start.named_parameters(),
@@ -57,6 +61,8 @@ def track_params(model, model_start, model_previous, model_start_1):
         dist1_tensor = param.data - param_start_1.data
         step = param.data - param_prev.data
 
+        l2norm += torch.norm(param.data) ** 2
+        l1norm += torch.norm(param.data, p=1)
         dist += torch.norm(dist_tensor) ** 2
         dist1 += torch.norm(dist1_tensor) ** 2
         grad_step += torch.norm(step) ** 2
@@ -72,6 +78,8 @@ def track_params(model, model_start, model_previous, model_start_1):
         # grad_norm = torch.mean(param_abs)
         # grad_max = torch.max(param_abs)
         return (
+            torch.sqrt(l2norm / num_el),
+            l1norm / num_el,
             torch.sqrt(dist / num_el),
             torch.sqrt(dist1 / num_el),
             torch.sqrt(grad_step / num_el),
@@ -162,26 +170,30 @@ def general_train_step(
         if args["optimizer"] == "AdamW":
             # adjust_model_mask(model, model_prev, mask_dict)
             pass
-        dist, dist1, grad_step, std_step, std_dist = track_params(
+        l2norm, l1norm, dist, dist1, grad_step, std_step, std_dist = track_params(
             model, model_start, model_prev, model_start1
         )
         optimizer.zero_grad()
-        #TODO Note that this calculation only valid if batch_accum == batch_size
+        # TODO Note that this calculation only valid if batch_accum == batch_size
         if track_loss_change:
             model.eval()
             with torch.no_grad():
-                loss_new = model(input_ids=inputs, labels=labels, attention_mask=attn_mask)[0]
+                loss_new = model(
+                    input_ids=inputs, labels=labels, attention_mask=attn_mask
+                )[0]
             model.train()
         if epoch == 0:
             dist1 = 0
         log_dict.update(
             {
+                "weight L1 norm": l1norm,
+                "weight L2 norm": l2norm,
                 "distance": dist,
                 "distance from 1 epoch": dist1,
                 "grad step": grad_step,
                 "std distance": std_dist,
                 "std step": std_step,
-                "loss change": loss_new.item() - loss.item()
+                "loss change": loss_new.item() - loss.item(),
             }
         )
         if to_log:
