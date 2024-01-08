@@ -133,6 +133,7 @@ def general_train_step(
     device,
     filter_gradients,
     to_log,
+    track_loss_change,
 ):
     inputs = batch["input_ids"].to(device)
     labels = batch["labels"].to(device)
@@ -165,6 +166,12 @@ def general_train_step(
             model, model_start, model_prev, model_start1
         )
         optimizer.zero_grad()
+        #TODO Note that this calculation only valid if batch_accum == batch_size
+        if track_loss_change:
+            model.eval()
+            with torch.no_grad():
+                loss_new = model(input_ids=inputs, labels=labels, attention_mask=attn_mask)[0]
+            model.train()
         if epoch == 0:
             dist1 = 0
         log_dict.update(
@@ -174,6 +181,7 @@ def general_train_step(
                 "grad step": grad_step,
                 "std distance": std_dist,
                 "std step": std_step,
+                "loss change": loss_new.item() - loss.item()
             }
         )
         if to_log:
