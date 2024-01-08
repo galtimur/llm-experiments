@@ -2,6 +2,12 @@ import torch
 import copy
 import wandb
 
+def adjust_model_mask(model, model_prev, mask_dict):
+    for (_, param_prev), (name, param_curr) in zip(
+        model_prev.named_parameters(), model.named_parameters()
+    ):
+        mask = ~mask_dict[name]
+        param_curr.data[mask] = param_prev.data[mask]
 
 def filter_grad(model, mask_dict, threshold, type, apply_saved_mask):
     num_el = 0
@@ -202,3 +208,22 @@ def general_train_step(
             )
             wandb.log(log_dict, commit=True)
     return mask_dict
+
+def init_wandb(project_name, entity_name, args):
+    run = wandb.init(project=project_name, entity=entity_name)
+    wandb.define_metric("samples")
+    wandb.define_metric("loss vs samples", step_metric="samples")
+    wandb.define_metric("batch accum vs samples", step_metric="samples")
+    wandb.define_metric("val/loss vs samples", step_metric="samples")
+    wandb.define_metric("distance", step_metric="samples")
+    wandb.define_metric("distance from 1 epoch", step_metric="samples")
+    wandb.define_metric("grad step", step_metric="samples")
+    wandb.define_metric("std distance", step_metric="samples")
+    wandb.define_metric("std step", step_metric="samples")
+    wandb.define_metric("grad part", step_metric="samples")
+    wandb.define_metric("part common", step_metric="samples")
+    wandb.define_metric("learning rate", step_metric="samples")
+    wandb.define_metric("loss change", step_metric="samples")
+    wandb.define_metric("weight L1 norm", step_metric="samples")
+    wandb.define_metric("weight L2 norm", step_metric="samples")
+    wandb.config.update(args)

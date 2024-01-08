@@ -5,7 +5,7 @@ import copy
 from torch.utils.data import DataLoader
 from functools import partial
 
-from utils import process_batch_template, validate, general_train_step
+from utils import process_batch_template, validate, general_train_step, init_wandb
 
 # from transformers import AdamW, SGD
 from torch.optim import SGD, AdamW
@@ -36,6 +36,8 @@ datapath = "/mnt/data2/galimzyanov/megatron/wikitext"
 outpath = "/mnt/data2/galimzyanov/megatron/gpt2_checkpoints"
 prefix = "wiki-text-103-raw-"
 filter_gradients = False
+project_name = "GPT2"
+entity_name = "timur-galimzyanov"
 
 args = {
     "max_seq_length": 1024,
@@ -73,14 +75,6 @@ tokenizer.padding_side = "right"
 tokenizer.pad_token = tokenizer.eos_token
 
 
-def adjust_model_mask(model, model_prev, mask_dict):
-    for (_, param_prev), (name, param_curr) in zip(
-        model_prev.named_parameters(), model.named_parameters()
-    ):
-        mask = ~mask_dict[name]
-        param_curr.data[mask] = param_prev.data[mask]
-
-
 process_batch = partial(
     process_batch_template, tokenizer=tokenizer, max_seq_length=max_seq_length
 )
@@ -101,24 +95,7 @@ if args["optimizer"] == "AdamW":
 val_interval = args["val_interval"]
 
 if to_log:
-    run = wandb.init(project="GPT2", entity="timur-galimzyanov")
-    wandb.define_metric("samples")
-    wandb.define_metric("loss vs samples", step_metric="samples")
-    wandb.define_metric("batch accum vs samples", step_metric="samples")
-    wandb.define_metric("val/loss vs samples", step_metric="samples")
-    wandb.define_metric("distance", step_metric="samples")
-    wandb.define_metric("distance from 1 epoch", step_metric="samples")
-    wandb.define_metric("grad step", step_metric="samples")
-    wandb.define_metric("std distance", step_metric="samples")
-    wandb.define_metric("std step", step_metric="samples")
-    wandb.define_metric("grad part", step_metric="samples")
-    wandb.define_metric("part common", step_metric="samples")
-    wandb.define_metric("learning rate", step_metric="samples")
-    wandb.define_metric("loss change", step_metric="samples")
-    wandb.define_metric("weight L1 norm", step_metric="samples")
-    wandb.define_metric("weight L2 norm", step_metric="samples")
-
-    wandb.config.update(args)
+    init_wandb(project_name, entity_name, args)
 
 train_step = partial(
     general_train_step,
