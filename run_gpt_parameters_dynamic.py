@@ -47,6 +47,7 @@ args = {
     "mini_batch_size": 6,
     "batch_accum_size": 6,
     "epochs": 10,
+    "loss change period": 10,
     "threshold": 0.2,
     "type": "largest",
     "model_size": num_params,
@@ -115,17 +116,18 @@ consumed_batches = 0
 mask_dict = dict()
 num_batches = len(train_loader)
 
+# scheduler = torch.optim.lr_scheduler.OneCycleLR(
+#     optimizer,
+#     max_lr=args["lr"],
+#     pct_start=0.05,
+#     total_steps=num_batches,
+#     cycle_momentum=False,
+# )
+
 for epoch in range(args["epochs"]):  # number of epochs
     if epoch == 1:
         print("Copying model for distance calc")
         model_start1 = copy.deepcopy(model)
-    scheduler = torch.optim.lr_scheduler.OneCycleLR(
-        optimizer,
-        max_lr=args["lr"],
-        pct_start=0.05,
-        total_steps=num_batches,
-        cycle_momentum=False,
-    )
     batch_prev = None
     skip = True
     for batch in tqdm(train_loader):
@@ -162,9 +164,9 @@ for epoch in range(args["epochs"]):  # number of epochs
                     commit=True,
                 )
                 model.train()
-        scheduler.step()
+        # scheduler.step()
         batch_prev = batch
 
-    model.save_pretrained(
-        os.path.join(outpath, f"gpt2_cycle_no_moment_batch{batch_accum}_e{epoch}")
-    )
+    # model.save_pretrained(
+    #     os.path.join(outpath, f"gpt2_batch{batch_accum}_e{epoch}")
+    # )

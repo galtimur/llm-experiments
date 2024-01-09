@@ -152,13 +152,18 @@ def general_train_step(
     track_loss_change,
     batch_next=None,
 ):
+    track_period = args["loss change period"]
     inputs = batch["input_ids"].to(device)
     labels = batch["labels"].to(device)
     attn_mask = batch["attn_mask"].to(device)
     batch_size = inputs.shape[0]
     consumed_samples = batch_size * consumed_batches
 
-    if track_loss_change and batch_next is not None:
+    if (
+        track_loss_change
+        and consumed_batches % track_period == 0
+        and batch_next is not None
+    ):
         inputs_next = batch_next["input_ids"].to(device)
         labels_next = batch_next["labels"].to(device)
         attn_mask_next = batch_next["attn_mask"].to(device)
@@ -195,13 +200,14 @@ def general_train_step(
         )
         optimizer.zero_grad()
         # TODO Note that this calculation only valid if batch_accum == batch_size
-        if track_loss_change:
+        if track_loss_change and consumed_batches % track_period == 0:
             model.eval()
             with torch.no_grad():
                 loss_new = model(
                     input_ids=inputs, labels=labels, attention_mask=attn_mask
                 )
                 loss_new = loss_new[0].item()
+                log_dict.update({"loss change": loss_new - loss.item()})
                 if batch_next is not None:
                     loss_next = model(
                         input_ids=inputs_next,
@@ -209,6 +215,7 @@ def general_train_step(
                         attention_mask=attn_mask_next,
                     )
                     loss_next = loss_next[0].item()
+                    log_dict.update({"loss change next": loss_next - loss_prev})
                 else:
                     loss_next = 0
                     loss_prev = 0
@@ -224,8 +231,6 @@ def general_train_step(
                 "grad step": grad_step,
                 "std distance": std_dist,
                 "std step": std_step,
-                "loss change": loss_new - loss.item(),
-                "loss change next": loss_next - loss_prev,
             }
         )
         if to_log:
