@@ -2,12 +2,14 @@ import torch
 import copy
 import wandb
 
+
 def adjust_model_mask(model, model_prev, mask_dict):
     for (_, param_prev), (name, param_curr) in zip(
         model_prev.named_parameters(), model.named_parameters()
     ):
         mask = ~mask_dict[name]
         param_curr.data[mask] = param_prev.data[mask]
+
 
 def filter_grad(model, mask_dict, threshold, type, apply_saved_mask):
     num_el = 0
@@ -148,6 +150,7 @@ def general_train_step(
     filter_gradients,
     to_log,
     track_loss_change,
+    batch_next=None,
 ):
     inputs = batch["input_ids"].to(device)
     labels = batch["labels"].to(device)
@@ -155,6 +158,17 @@ def general_train_step(
     batch_size = inputs.shape[0]
     consumed_samples = batch_size * consumed_batches
 
+    if track_loss_change and batch_next is not None:
+        inputs_next = batch_next["input_ids"].to(device)
+        labels_next = batch_next["labels"].to(device)
+        attn_mask_next = batch_next["attn_mask"].to(device)
+        model.eval()
+        with torch.no_grad():
+            loss_prev = model(
+                input_ids=inputs_next, labels=labels_next, attention_mask=attn_mask_next
+            )
+            loss_prev = loss_prev[0].item()
+        model.train()
     loss = model(input_ids=inputs, labels=labels, attention_mask=attn_mask)[0]
     loss.backward()
 
@@ -186,7 +200,18 @@ def general_train_step(
             with torch.no_grad():
                 loss_new = model(
                     input_ids=inputs, labels=labels, attention_mask=attn_mask
-                )[0]
+                )
+                loss_new = loss_new[0].item()
+                if batch_next is not None:
+                    loss_next = model(
+                        input_ids=inputs_next,
+                        labels=labels_next,
+                        attention_mask=attn_mask_next,
+                    )
+                    loss_next = loss_next[0].item()
+                else:
+                    loss_next = 0
+                    loss_prev = 0
             model.train()
         if epoch == 0:
             dist1 = 0
@@ -199,7 +224,8 @@ def general_train_step(
                 "grad step": grad_step,
                 "std distance": std_dist,
                 "std step": std_step,
-                "loss change": loss_new.item() - loss.item(),
+                "loss change": loss_new - loss.item(),
+                "loss change next": loss_next - loss_prev,
             }
         )
         if to_log:
@@ -207,7 +233,8 @@ def general_train_step(
                 {"loss vs samples": loss.item(), "samples": consumed_samples}
             )
             wandb.log(log_dict, commit=True)
-    return mask_dict
+    return mask_dict, loss.item()
+
 
 def init_wandb(project_name, entity_name, args):
     run = wandb.init(project=project_name, entity=entity_name)
@@ -224,6 +251,7 @@ def init_wandb(project_name, entity_name, args):
     wandb.define_metric("part common", step_metric="samples")
     wandb.define_metric("learning rate", step_metric="samples")
     wandb.define_metric("loss change", step_metric="samples")
+    wandb.define_metric("loss change next", step_metric="samples")
     wandb.define_metric("weight L1 norm", step_metric="samples")
     wandb.define_metric("weight L2 norm", step_metric="samples")
     wandb.config.update(args)

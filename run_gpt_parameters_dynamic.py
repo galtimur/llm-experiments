@@ -126,7 +126,13 @@ for epoch in range(args["epochs"]):  # number of epochs
         total_steps=num_batches,
         cycle_momentum=False,
     )
+    batch_prev = None
+    skip = True
     for batch in tqdm(train_loader):
+        if skip:
+            skip = False
+            batch_prev = batch
+            continue
         consumed_batches += 1
         consumed_samples = batch_size * consumed_batches
         if to_log:
@@ -138,8 +144,9 @@ for epoch in range(args["epochs"]):  # number of epochs
                 },
                 commit=True,
             )
-        mask_dict = train_step(
-            batch=batch,
+        mask_dict, loss = train_step(
+            batch=batch_prev,
+            batch_next=batch,
             model_start1=model_start1,
             mask_dict=mask_dict,
             batch_accum=batch_accum,
@@ -156,6 +163,7 @@ for epoch in range(args["epochs"]):  # number of epochs
                 )
                 model.train()
         scheduler.step()
+        batch_prev = batch
 
     model.save_pretrained(
         os.path.join(outpath, f"gpt2_cycle_no_moment_batch{batch_accum}_e{epoch}")
