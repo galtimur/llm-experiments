@@ -29,7 +29,6 @@ tokenizer = GPT2Tokenizer.from_pretrained("gpt2")
 num_params = sum(p.numel() for p in model.parameters())
 print(f"Model size in M = {num_params//1e6:.2f}")
 
-# Load the wikitext dataset
 from datasets import load_dataset
 
 datapath = "/mnt/data2/galimzyanov/megatron/wikitext"
@@ -72,6 +71,24 @@ test_dataset = load_dataset(
     "json", data_files=os.path.join(datapath, prefix + "test.jsonl")
 )["train"]
 
+# val_set = set(val_dataset["text"])
+# test_set = set(test_dataset["text"])
+# train_set = set(train_dataset["text"])
+# intersection_val = train_set.intersection(val_set)
+# intersection_test = train_set.intersection(test_set)
+# intersection_test_val = test_set.intersection(val_set)
+
+datapath_out = "/mnt/data2/huggingface/datasets"
+val_ood_dataset = load_dataset(
+    "json", data_files=os.path.join(datapath_out, "bookcorpus", "splits", "val.json")
+)["train"]
+
+# lengths = [len(item["text"]) for item in val_dataset]
+# print(sum(lengths) / len(lengths))
+#
+# lengths = [len(item["text"]) for item in val_ood_dataset]
+# print(sum(lengths) / len(lengths))
+
 tokenizer.padding_side = "right"
 tokenizer.pad_token = tokenizer.eos_token
 
@@ -83,6 +100,9 @@ train_loader = DataLoader(
     train_dataset, batch_size=batch_size, collate_fn=process_batch, shuffle=True
 )
 val_loader = DataLoader(val_dataset, batch_size=batch_size, collate_fn=process_batch)
+val_OOD_loader = DataLoader(
+    val_ood_dataset, batch_size=batch_size, collate_fn=process_batch
+)
 
 # Move the model to the selected device
 model.to(device)
@@ -116,15 +136,14 @@ consumed_batches = 0
 mask_dict = dict()
 num_batches = len(train_loader)
 
-# scheduler = torch.optim.lr_scheduler.OneCycleLR(
-#     optimizer,
-#     max_lr=args["lr"],
-#     pct_start=0.05,
-#     total_steps=num_batches,
-#     cycle_momentum=False,
-# )
-
 for epoch in range(args["epochs"]):  # number of epochs
+    scheduler = torch.optim.lr_scheduler.OneCycleLR(
+        optimizer,
+        max_lr=args["lr"],
+        pct_start=0.05,
+        total_steps=num_batches,
+        cycle_momentum=False,
+    )
     if epoch == 1:
         print("Copying model for distance calc")
         model_start1 = copy.deepcopy(model)
@@ -158,13 +177,18 @@ for epoch in range(args["epochs"]):  # number of epochs
 
         if (consumed_batches - 0) % val_interval == 0:
             loss_val = validate(val_loader, model, device)
+            loss_ood_val = validate(val_OOD_loader, model, device)
             if to_log:
                 wandb.log(
-                    {"val/loss vs samples": loss_val, "samples": consumed_samples},
+                    {
+                        "val/loss vs samples": loss_val,
+                        "val/loss OOD vs samples": loss_ood_val,
+                        "samples": consumed_samples,
+                    },
                     commit=True,
                 )
                 model.train()
-        # scheduler.step()
+        scheduler.step()
         batch_prev = batch
 
     # model.save_pretrained(

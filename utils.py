@@ -247,6 +247,7 @@ def init_wandb(project_name, entity_name, args):
     wandb.define_metric("loss vs samples", step_metric="samples")
     wandb.define_metric("batch accum vs samples", step_metric="samples")
     wandb.define_metric("val/loss vs samples", step_metric="samples")
+    wandb.define_metric("val/loss OOD vs samples", step_metric="samples")
     wandb.define_metric("distance", step_metric="samples")
     wandb.define_metric("distance from 1 epoch", step_metric="samples")
     wandb.define_metric("grad step", step_metric="samples")
