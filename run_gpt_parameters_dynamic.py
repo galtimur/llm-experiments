@@ -33,7 +33,7 @@ from datasets import load_dataset
 
 datapath = "/mnt/data2/galimzyanov/megatron/wikitext"
 outpath = "/mnt/data2/galimzyanov/megatron/gpt2_checkpoints"
-prefix = "wiki-text-103-raw-"
+cache_dir = "/mnt/data2/huggingface/datasets"
 filter_gradients = False
 project_name = "GPT2"
 entity_name = "timur-galimzyanov"
@@ -41,12 +41,15 @@ entity_name = "timur-galimzyanov"
 args = {
     "max_seq_length": 1024,
     "optimizer": "AdamW",  # "SGD", "AdamW"
-    "lr": 2e-4,  # 1e-4, 1e-3, 1e-2
-    "val_interval": 240,
+    "lr": 1e-4,  # 1e-4, 1e-3, 1e-2
+    "val_interval": 12000,
     "mini_batch_size": 6,
-    "batch_accum_size": 6,
+    "batch_accum_size": 60,
     "epochs": 10,
-    "loss change period": 10,
+    "epoch_size": 180000,
+    "loss change period": 60,
+    "track every step": True,
+    "bold driver": True,
     "threshold": 0.2,
     "type": "largest",
     "model_size": num_params,
@@ -58,18 +61,25 @@ to_log = True
 track_loss_change = True
 batch_size = args["mini_batch_size"]
 batch_accum = args["batch_accum_size"]
+epoch_batch_size = args["epoch_size"]/args["mini_batch_size"]
 
 # model = GPT2LMHeadModel.from_pretrained(os.path.join(outpath, 'gpt2_batch6_grad_select_e3'))
 
-train_dataset = load_dataset(
-    "json", data_files=os.path.join(datapath, prefix + "train.jsonl")
-)["train"]
-val_dataset = load_dataset(
-    "json", data_files=os.path.join(datapath, prefix + "val.jsonl")
-)["train"]
-test_dataset = load_dataset(
-    "json", data_files=os.path.join(datapath, prefix + "test.jsonl")
-)["train"]
+# prefix = "wiki-text-103-raw-"
+# train_dataset = load_dataset(
+#     "json", data_files=os.path.join(datapath, prefix + "train.jsonl")
+# )["train"]
+# val_dataset = load_dataset(
+#     "json", data_files=os.path.join(datapath, prefix + "val.jsonl")
+# )["train"]
+# test_dataset = load_dataset(
+#     "json", data_files=os.path.join(datapath, prefix + "test.jsonl")
+# )["train"]
+
+train_dataset = load_dataset("openwebtext", cache_dir=cache_dir)["train"]
+val_dataset = load_dataset("wikitext", "wikitext-103-raw-v1", cache_dir=cache_dir)[
+    "test"
+]
 
 # val_set = set(val_dataset["text"])
 # test_set = set(test_dataset["text"])
@@ -133,20 +143,18 @@ train_step = partial(
 # Training loop
 model.train()
 consumed_batches = 0
+epoch = 0
 mask_dict = dict()
 num_batches = len(train_loader)
 
 for epoch in range(args["epochs"]):  # number of epochs
-    scheduler = torch.optim.lr_scheduler.OneCycleLR(
-        optimizer,
-        max_lr=args["lr"],
-        pct_start=0.05,
-        total_steps=num_batches,
-        cycle_momentum=False,
-    )
-    if epoch == 1:
-        print("Copying model for distance calc")
-        model_start1 = copy.deepcopy(model)
+    # scheduler = torch.optim.lr_scheduler.OneCycleLR(
+    #     optimizer,
+    #     max_lr=args["lr"],
+    #     pct_start=0.05,
+    #     total_steps=num_batches,
+    #     cycle_momentum=False,
+    # )
     batch_prev = None
     skip = True
     for batch in tqdm(train_loader):
@@ -188,9 +196,14 @@ for epoch in range(args["epochs"]):  # number of epochs
                     commit=True,
                 )
                 model.train()
-        scheduler.step()
+        # scheduler.step()
         batch_prev = batch
 
-    # model.save_pretrained(
-    #     os.path.join(outpath, f"gpt2_batch{batch_accum}_e{epoch}")
-    # )
+        if (consumed_batches + 1) % epoch_batch_size == 0:
+            model.save_pretrained(
+                os.path.join(outpath, f"gpt2_openweb_text_batch{batch_accum}_p{epoch}")
+            )
+            epoch += 1
+            if epoch == 1:
+                print("Copying model for distance calc")
+                model_start1 = copy.deepcopy(model)

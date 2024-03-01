@@ -153,6 +153,8 @@ def general_train_step(
     batch_next=None,
 ):
     track_period = args["loss change period"]
+    # track_period = max(track_period, batch_accum)
+    track_every_step = args["track every step"]
     inputs = batch["input_ids"].to(device)
     labels = batch["labels"].to(device)
     attn_mask = batch["attn_mask"].to(device)
@@ -200,14 +202,36 @@ def general_train_step(
         )
         optimizer.zero_grad()
         # TODO Note that this calculation only valid if batch_accum == batch_size
-        if track_loss_change and consumed_batches % track_period == 0:
+        loss_change = -1
+        bold_driver = True
+        loss_old = loss.item()
+        if track_loss_change and (
+            track_every_step or consumed_batches % track_period == 0
+        ):
             model.eval()
+            total_loss_change = 0
+            num_blind_steps = 0
             with torch.no_grad():
                 loss_new = model(
                     input_ids=inputs, labels=labels, attention_mask=attn_mask
                 )
                 loss_new = loss_new[0].item()
-                log_dict.update({"loss change": loss_new - loss.item()})
+                loss_change = loss_new - loss_old
+                loss_old = loss_new
+                total_loss_change += loss_change
+                # if loss_change >= 0 or not args["bold driver"]:
+                #     bold_driver = False
+                # if loss_change < 0 and args["bold driver"]:
+                #     print(loss_change)
+                #     optimizer.step()
+                #     num_blind_steps += 1
+                #     continue
+                log_dict.update(
+                    {
+                        "loss change": total_loss_change,
+                        # "num blind steps": num_blind_steps,
+                    }
+                )
                 if batch_next is not None:
                     loss_next = model(
                         input_ids=inputs_next,
@@ -257,6 +281,7 @@ def init_wandb(project_name, entity_name, args):
     wandb.define_metric("part common", step_metric="samples")
     wandb.define_metric("learning rate", step_metric="samples")
     wandb.define_metric("loss change", step_metric="samples")
+    # wandb.define_metric("num blind steps", step_metric="samples")
     wandb.define_metric("loss change next", step_metric="samples")
     wandb.define_metric("weight L1 norm", step_metric="samples")
     wandb.define_metric("weight L2 norm", step_metric="samples")
