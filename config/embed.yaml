@@ -1,9 +1,13 @@
 max_seq_length: 256
 optimizer: "AdamW"  # "SGD", "AdamW"
 learning_rate: 1e-3  # 1e-4, 1e-3, 1e-2
-beta: 2
+beta: 0.5
 batch_size: 50
 batch_accum_size: 60
 track_every_step: true
 project_name: "embed_training"
 entity_name: "timur-galimzyanov"
+max_steps: 100000 # 100000
+validate_per: 200
+save_period: 2000 # 2000
+out_folder: "/mnt/data2/galimzyanov/gpt2/embedings_ckpts/"

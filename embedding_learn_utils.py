@@ -113,6 +113,7 @@ def setup_train():
     # test_generate(model, tokenizer, device)
 
     embeddings = copy.deepcopy(model.get_input_embeddings()).to(device)
+    # new_embeddings.load_state_dict(torch.load("embeddings_state_dict.pth"))
     embeddings_pretrained = copy.deepcopy(model_pretrained.get_input_embeddings()).to(
         device
     )
