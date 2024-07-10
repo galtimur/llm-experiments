@@ -2,16 +2,12 @@ from torch.optim import SGD, AdamW
 from transformers import GPT2LMHeadModel, GPT2Tokenizer, GPT2Config
 import torch
 import torch.nn.functional as F
-from torch import nn
-from tqdm import tqdm
-from datasets import load_dataset
-from torch.utils.data import DataLoader
-from functools import partial
 
 from omegaconf import OmegaConf
 import copy
 
 from utils import process_batch_template, validate, general_train_step, init_wandb
+from data import get_datasets
 
 """
 Learning embedding
@@ -21,10 +17,10 @@ Learning embedding
 def calc_traj_length(input_ids, embeddings):
     emb = embeddings(input_ids)
     emb = F.normalize(emb, p=2, dim=1)
-    distances = torch.norm(emb[:, 1:] - emb[:, :-1], dim=-1)
-    distance = distances.sum()
+    distances = torch.norm(emb[:, 1:] - emb[:, :-1], dim=-1)/(emb.size(-1)-1)
+    distance = distances.mean()
 
-    return distance
+    return distance.item()
 
 
 def calc_dist(input_ids1, input_ids2, embeddings):
@@ -124,27 +120,7 @@ def setup_train():
     if config.optimizer == "AdamW":
         optimizer = AdamW(embeddings.parameters(), lr=config.learning_rate)
 
-    train_dataset = load_dataset("openwebtext")["train"]
-    val_dataset = load_dataset("wikitext", "wikitext-103-raw-v1")["test"]
-
-    process_batch = partial(
-        process_batch_template,
-        tokenizer=tokenizer,
-        max_seq_length=config.max_seq_length,
-    )
-    train_loader = DataLoader(
-        train_dataset,
-        batch_size=config.batch_size,
-        collate_fn=process_batch,
-        shuffle=True,
-    )
-
-    val_loader = DataLoader(
-        val_dataset,
-        batch_size=config.batch_size,
-        collate_fn=process_batch,
-        shuffle=True,
-    )
+    train_loader, val_loader = get_datasets(tokenizer, config.batch_size, config.max_seq_length)
 
     return (
         config,

@@ -7,7 +7,6 @@ from omegaconf import OmegaConf
 from embedding_learn_utils import (
     setup_train,
     validate_dist,
-    maximize_dist,
     calc_traj_length,
     calc_dist,
 )
@@ -30,10 +29,8 @@ def main():
         val_loader,
     ) = setup_train()
 
-    input_ids = next(iter(train_loader))["input_ids"].to(device)
-
     beta = config.beta
-    run_name = f"beta_{beta}_{config.optimizer}_lr{config.learning_rate}"
+    run_name = f"beta_{beta}_seq_{config.max_seq_length}_batch_{config.batch_size}_{config.optimizer}_lr{config.learning_rate}"
     run = wandb.init(
         project=config.project_name,
         entity=config.entity_name,
@@ -44,6 +41,7 @@ def main():
         config.out_folder, run_name
     )
     os.makedirs(config.out_folder, exist_ok=True)
+    input_ids = next(iter(train_loader))["input_ids"].to(device)
     validate_dist(
         embeddings, embeddings_pretrained, tokenizer.vocab_size - 1, input_ids=input_ids
     )
