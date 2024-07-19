@@ -3,10 +3,12 @@ from torch.utils.data import DataLoader
 from functools import partial
 from utils import process_batch_template
 
-def get_datasets(tokenizer, batch_size, max_seq_length, seed=42, max_val_samples=None):
 
+def get_datasets(tokenizer, batch_size, max_seq_length, seed=42, max_val_samples=None):
     train_dataset = load_dataset("openwebtext")["train"].shuffle(seed=seed)
-    val_dataset = load_dataset("wikitext", "wikitext-103-raw-v1")["test"].shuffle(seed=seed)
+    val_dataset = load_dataset("wikitext", "wikitext-103-raw-v1")["test"].shuffle(
+        seed=seed
+    )
 
     if max_val_samples is not None:
         val_dataset = val_dataset.select(range(max_val_samples))

@@ -18,7 +18,7 @@ for item in dataset["train"]:
         buffer = ""
         buffer_length = 0
 
-    if len(merged_dataset)>=540:
+    if len(merged_dataset) >= 540:
         break
 
 df = pd.DataFrame({"text": merged_dataset})
@@ -27,5 +27,5 @@ items = [item["text"] for item in val_dataset]
 lengths = [len(item["text"].split(" ")) for item in val_dataset]
 print(sum(lengths) / len(lengths))
 
-split_path = os.path.join(datapath, "bookcorpus", "splits", 'val.json')
+split_path = os.path.join(datapath, "bookcorpus", "splits", "val.json")
 val_dataset.to_json(split_path)

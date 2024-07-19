@@ -19,7 +19,6 @@ from math import ceil
 from data.s3_data_exchange import upload_directory_s3
 
 
-
 class Trainer:
     def __init__(
         self,
@@ -321,6 +320,7 @@ class Trainer:
         print(
             f"Saving checkpoints every: {self.config.save_hf_checkpoints_every * self.accum_steps}, in total: {len(self.checkpoint_steps)} saves"
         )
+
 
 # def log_processed_batch(logits, losses, batch, tokenizer):
 #     all_examples = []

@@ -42,7 +42,6 @@ class DataloaderFetcher:
         return inputs
 
     def prepare_dataset(self):
-
         train_ds = load_dataset(
             path=self.config.data.train_name_or_path,
             name=self.config.data.train_ds_subset,

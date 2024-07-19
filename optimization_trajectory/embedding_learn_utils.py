@@ -17,7 +17,7 @@ Learning embedding
 def calc_traj_length(input_ids, embeddings):
     emb = embeddings(input_ids)
     emb = F.normalize(emb, p=2, dim=1)
-    distances = torch.norm(emb[:, 1:] - emb[:, :-1], dim=-1)/(emb.size(-1)-1)
+    distances = torch.norm(emb[:, 1:] - emb[:, :-1], dim=-1) / (emb.size(-1) - 1)
     distance = distances.mean()
 
     return distance.item()
@@ -120,7 +120,9 @@ def setup_train():
     if config.optimizer == "AdamW":
         optimizer = AdamW(embeddings.parameters(), lr=config.learning_rate)
 
-    train_loader, val_loader = get_datasets(tokenizer, config.batch_size, config.max_seq_length)
+    train_loader, val_loader = get_datasets(
+        tokenizer, config.batch_size, config.max_seq_length
+    )
 
     return (
         config,

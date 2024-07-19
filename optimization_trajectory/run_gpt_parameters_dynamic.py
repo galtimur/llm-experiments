@@ -61,7 +61,7 @@ to_log = True
 track_loss_change = True
 batch_size = args["mini_batch_size"]
 batch_accum = args["batch_accum_size"]
-epoch_batch_size = args["epoch_size"]/args["mini_batch_size"]
+epoch_batch_size = args["epoch_size"] / args["mini_batch_size"]
 
 # model = GPT2LMHeadModel.from_pretrained(os.path.join(outpath, 'gpt2_batch6_grad_select_e3'))
 

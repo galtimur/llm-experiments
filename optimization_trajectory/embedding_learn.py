@@ -37,9 +37,7 @@ def main():
         name=run_name,
         config=OmegaConf.to_container(config, resolve=True),
     )
-    config.out_folder = os.path.join(
-        config.out_folder, run_name
-    )
+    config.out_folder = os.path.join(config.out_folder, run_name)
     os.makedirs(config.out_folder, exist_ok=True)
     input_ids = next(iter(train_loader))["input_ids"].to(device)
     validate_dist(
