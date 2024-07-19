@@ -1,12 +1,14 @@
 general:
   s3_bucket: 'jettrain-experiments'
   wandb_project: 'llm-experiments'
+  num_workers: 1
 model:
   sequence_length: 512
   model: "codellama/CodeLlama-7b-hf"
 train:
   num_epochs: 1
-  batch_size: 4
+  train_batch_size: 4
+  val_batch_size: 4
   num_gpus: 8
   accumulate_grad: 128
   precision: "bf16"
@@ -26,6 +28,11 @@ train:
   s3_checkpoint_path:
   model_checkpoints: 'mnt/data2/galimzyanov/llm-experiments/gpt2-zip-compression/'
 data:
+  train_name_or_path: "openwebtext"
+  train_ds_subset: null
+  val_name_or_path: "wikitext"
+  val_ds_subset: "wikitext-103-raw-v1"
+  text_key: "text"
   num_workers: 0
   save_path: 'mnt/data2/galimzyanov/datasets/'
   validation_path:

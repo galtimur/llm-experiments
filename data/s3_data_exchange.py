@@ -5,7 +5,7 @@ from tqdm import tqdm
 
 
 def upload_file_s3(
-        checkpoint_file, s3_checkpoint_file, bucket_name="jettrain-experiments"
+    checkpoint_file, s3_checkpoint_file, bucket_name="jettrain-experiments"
 ):
     # Initialize the S3 client
     aws_access_key_id, aws_secret_access_key = (
@@ -32,7 +32,7 @@ def upload_file_s3(
 
 
 def download_file_s3(
-        local_checkpoint_file, s3_checkpoint_file, bucket_name="jettrain-experiments"
+    local_checkpoint_file, s3_checkpoint_file, bucket_name="jettrain-experiments"
 ):
     # Initialize the S3 client
     aws_access_key_id, aws_secret_access_key = (
@@ -58,7 +58,7 @@ def download_file_s3(
 
 
 def upload_directory_s3(
-        checkpoint_folder, s3_directory, bucket_name="jettrain-experiments"
+    checkpoint_folder, s3_directory, bucket_name="jettrain-experiments"
 ):
     # Initialize the S3 client
     aws_access_key_id, aws_secret_access_key = (
@@ -104,7 +104,7 @@ def download_s3_folder(bucket_name, s3_folder, local_dir=None):
         aws_secret_access_key=aws_secret_access_key,
     )
 
-    s3_folder = s3_folder[len(bucket_name) + 6:]
+    s3_folder = s3_folder[len(bucket_name) + 6 :]
 
     bucket = s3_resource.Bucket(bucket_name)
 
