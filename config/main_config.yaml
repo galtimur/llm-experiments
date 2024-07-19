@@ -1,0 +1,33 @@
+general:
+  s3_bucket: 'jettrain-experiments'
+  wandb_project: 'llm-experiments'
+model:
+  sequence_length: 512
+  model: "codellama/CodeLlama-7b-hf"
+train:
+  num_epochs: 1
+  batch_size: 4
+  num_gpus: 8
+  accumulate_grad: 128
+  precision: "bf16"
+  device: 'cuda:1'
+  # Optimizer settings
+  max_lr: 0.00001
+  weight_decay: 0.00
+  warmup_steps: 1000
+  max_norm: 10000
+  scheduler: 'cosine'
+  # Validation
+  validate_every: 2000
+  val_samples: 2000
+  # Save settings
+  save_ckpts_every_sample: 20000
+  upload_to_s3: False
+  s3_checkpoint_path:
+  model_checkpoints: 'mnt/data2/galimzyanov/llm-experiments/gpt2-zip-compression/'
+data:
+  num_workers: 0
+  save_path: 'mnt/data2/galimzyanov/datasets/'
+  validation_path:
+  s3_path:
+  valid_portion: 0.01
