@@ -132,6 +132,6 @@ def check_if_file_exists(bucket, key):
     try:
         s3.head_object(Bucket=bucket, Key=key)
         return True
-    # TODO specify the error
-    except:
+    except Exception as e:
+        # raise Exception(f"Validation fails with error: {e}")
         return False

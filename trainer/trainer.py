@@ -1,6 +1,5 @@
 import random
 import shutil
-import warnings
 from math import ceil
 from pathlib import Path
 
@@ -51,23 +50,16 @@ class Trainer:
         }
 
         self.model.to(self.device)
-        self._compute_steps()
-
-        # TODO stopped here
-        self.accum_steps = self.train_args.accumulate_grad
-
+        self.model.train()
         self.opt = torch.optim.AdamW(
             self.model.parameters(),
             lr=float(self.train_args.max_lr),
             weight_decay=self.train_args.weight_decay,
         )
 
-        self.scheduler = None
-        self.define_scheduler()
-
-        self.checkpoint_steps = []
-        self.val_steps = []
-        self.setup_validation_and_checkpoint_schedule()
+        self.accum_steps = None
+        self.step_args = self._compute_steps()
+        self.scheduler = self.define_scheduler()
 
         self.batches_done = 0
         self.mini_batches_done = 0
@@ -81,7 +73,15 @@ class Trainer:
         # Prioritization: samples-steps-ratio
         # samples = steps*accum_batch_size
         step_args = self.train_args.steps
-        full_batch_size = self.train_args.train_batch_size
+        accum_steps = (
+            self.train_args.train_batch_size // self.train_args.train_mini_batch_size
+        )
+        self.train_args.accum_steps = accum_steps
+        full_batch_size = accum_steps * self.train_args.train_mini_batch_size
+        if full_batch_size != self.train_args.train_batch_size:
+            print("! Global batch size is not devisable by mini !")
+            print(f"! New global batch size = {full_batch_size}")
+            self.train_args.train_batch_size = full_batch_size
 
         if step_args.warmup_samples is not None:
             step_args.warmup_steps_or_ratio = (
@@ -95,16 +95,24 @@ class Trainer:
             step_args.max_train_steps = step_args.max_train_samples // full_batch_size
         elif step_args.max_train_steps is None:
             step_args.max_train_steps = (
-                len(self.train_dataloader) * step_args.num_epochs // full_batch_size
+                step_args.num_epochs
+                * len(self.train_dataloader)
+                * self.train_args.train_mini_batch_size
+                // full_batch_size
             )
         if step_args.max_val_samples is not None:
             step_args.max_val_steps = (
                 step_args.max_val_samples // self.train_args.val_batch_size
             )
-        step_args.warmup_step_or_ratio = self._compute_warmup(
+        elif step_args.max_val_steps is None:
+            step_args.max_val_steps = len(self.val_dataloader)
+        step_args.warmup_steps = self._compute_warmup(
             step_args.warmup_steps_or_ratio, step_args.max_train_steps
         )
         self.train_args.steps = step_args
+        self.accum_steps = accum_steps
+
+        return step_args
 
     @staticmethod
     def _compute_warmup(steps_or_ratio: int | float, total_steps: int) -> int:
@@ -118,49 +126,39 @@ class Trainer:
             )
 
     def define_scheduler(self):
-        warmup_steps = self._compute_warmup()
         scheduler_fetcher = self.scheduler_mapping[self.train_args.scheduler]
-        scheduler_fetcher(
-            self.opt,
-            warmup_steps,
-            (len(self.train_dataloader) // self.accum_steps)
-            * self.train_args.num_epochs,
+        return scheduler_fetcher(
+            optimizer=self.opt,
+            num_warmup_steps=self.step_args.warmup_steps,
+            num_training_steps=self.step_args.max_train_steps,
         )
 
     def run_epoch(self):
         if not self.sanity_check_complete:
-            self.validation()
-            self.save_hf_checkpoint()
+            self.validation(limit=20)
+            self._save_ckpt()
             self.sanity_check_complete = True
 
-        # TODO replace or add samples
-        wandb.log({"train/total_minibatches": len(self.train_dataloader)})
-
         for batch_idx, batch in tqdm(
-            enumerate(self.train_dataloader), total=len(self.train_dataloader)
+            enumerate(self.train_dataloader, start=1),
+            total=len(self.step_args.max_train_steps),
         ):
             to_log = self.training_step(batch, batch_idx)
-            wandb.log(to_log)
+            if to_log is not None:
+                wandb.log(to_log)
 
-            if len(self.train_dataloader) < self.accum_steps:
-                warnings.warn(
-                    "No optimizer steps will be done since self.accum_steps > num_of_batches_in_dataloader"
-                )
-
-            if self.mini_batches_done in self.val_steps:
+            if (to_log is not None) and (self.batches_done % self.step_args.val_every_step == 0):
                 print(f"validation on step {self.batches_done}")
                 to_log = self.validation()
                 wandb.log(to_log)
-                self.val_steps.remove(self.mini_batches_done)
 
-            if self.mini_batches_done in self.checkpoint_steps:
+            if (to_log is not None) and (self.batches_done % self.step_args.save_every_step == 0):
                 print(f"checkpoint on step: {self.batches_done}")
-                self.save_hf_checkpoint()
-                self.checkpoint_steps.remove(self.mini_batches_done)
+                self._save_ckpt()
 
         to_log = self.validation()
         wandb.log(to_log)
-        self.save_hf_checkpoint()
+        self._save_ckpt()
 
     def run_training(self):
         total_epochs = self.config["num_epochs"]
@@ -168,47 +166,27 @@ class Trainer:
             print(f"Epoch {epoch_id} / {total_epochs} start")
             self.run_epoch()
 
-    def validation(self):
+    def validation(self, limit: int = -1) -> dict[str, float]:
         self.model.eval()
-
-        log_humaneval = self.generate_humaneval_task()
-
         full_val_loss = 0
-        for batch_idx, batch in enumerate(self.val_dataloader):
+        if limit < 0:
+            limit = len(self.val_dataloader)
+        for batch_idx, batch in enumerate(self.val_dataloader, start=1):
             batch = {k: v.to(self.device) for k, v in batch.items()}
 
             with torch.no_grad():
                 outputs = self.model_step(batch, return_dict=True)
-                full_val_loss += outputs["loss"]
+                full_val_loss += outputs["loss"].item()
 
-            # if batch_idx == 3:
-            #     log_batch = log_processed_batch(
-            #         outputs["logits"],
-            #         outputs["loss_tensor"],
-            #         batch["input_ids"],
-            #         self.tokenizer,
-            #     )
-        val_loss_mean = full_val_loss / len(self.val_dataloader)
+            if batch_idx > limit:
+                break
 
-        # TODO: refactor duplicated code?
-        full_humaneval_loss = 0
-        for batch_idx, batch in enumerate(self.human_eval_loader):
-            batch = {k: v.to(self.device) for k, v in batch.items()}
-
-            with torch.no_grad():
-                outputs = self.model_step(batch, return_dict=True)
-                full_humaneval_loss += outputs["loss"]
-
-        humaneval_loss_mean = full_humaneval_loss / len(self.val_dataloader)
-
-        self.model.train()
-
+        val_loss_mean = full_val_loss / batch_idx
         to_log = {
-            "val/val_loss_mean": val_loss_mean,
-            "val/humaneval_loss_mean": humaneval_loss_mean,
+            "val/loss": val_loss_mean,
         }
+        self.model.train()
         # to_log.update(log_batch)
-        to_log.update(log_humaneval)
 
         return to_log
 
@@ -230,38 +208,37 @@ class Trainer:
 
         return loss
 
-    def training_step(self, batch, batch_idx):
-        to_log = {}
+    def training_step(self, batch, batch_idx: int) -> bool:
 
+        to_log = {}
         batch = {k: v.to(self.device) for k, v in batch.items()}
 
         loss = self.model_step(batch) / self.accum_steps
         loss.backward()
 
-        grad_norm = torch.nn.utils.clip_grad_norm_(
-            self.model.parameters(), self.train_args.max_norm, norm_type=2.0
-        )
-
-        to_log["train/loss_mini_batch"] = loss
-        to_log["grad_norm"] = grad_norm
-
         self.loss_acc += loss.item()
-        if (batch_idx % self.accum_steps) == (self.accum_steps - 1):
+        if (batch_idx % self.accum_steps) == 0:
+            grad_norm = torch.nn.utils.clip_grad_norm_(
+                self.model.parameters(), self.train_args.max_norm, norm_type=2.0
+            )
             self.opt.step()
             self.opt.zero_grad()
-            lr = next(iter(self.opt.param_groups))["lr"]
+            lr = self.opt.param_groups[0]["lr"]
             self.scheduler.step()
 
-            to_log["train/loss_batch"] = self.loss_acc
+            to_log["train/loss"] = self.loss_acc
             to_log["lr"] = lr
 
             self.batches_done += 1
             self.loss_acc = 0.0
+            to_log["grad_norm"] = grad_norm
+            to_log["samples"] = batch_idx*self.train_args.train_mini_batch_size
+            return to_log
 
         self.mini_batches_done += 1
-        return to_log
+        return None
 
-    def save_ckpt(self):
+    def _save_ckpt(self):
         pth = self.general_args.checkpoints_path
         local_path = Path(f"{pth}/{self.wand_run_name}-{self.batches_done}")
         local_path.mkdir(parents=True, exist_ok=True)
@@ -319,30 +296,14 @@ class Trainer:
             " over and over and expecting different results"
         )
 
-    def setup_validation_and_checkpoint_schedule(self):
-        self.checkpoint_steps = list(
-            range(
-                1,
-                len(self.train_dataloader) * self.config["num_epochs"],
-                self.config.save_hf_checkpoints_every * self.accum_steps,
-            )
-        )
-        self.val_steps = list(
-            range(
-                1,
-                len(self.train_dataloader) * self.config["num_epochs"],
-                self.config.validate_every * self.accum_steps,
-            )
-        )
 
-        print(
-            f"Validation every: {self.config.validate_every * self.accum_steps}, in total: {len(self.val_steps)} validations"
-        )
-        print(
-            f"Saving checkpoints every: {self.config.save_hf_checkpoints_every * self.accum_steps}, in total: {len(self.checkpoint_steps)} saves"
-        )
-
-
+# if batch_idx == 3:
+#     log_batch = log_processed_batch(
+#         outputs["logits"],
+#         outputs["loss_tensor"],
+#         batch["input_ids"],
+#         self.tokenizer,
+#     )
 # def log_processed_batch(logits, losses, batch, tokenizer):
 #     all_examples = []
 #     for example_id, example_logits in enumerate(logits):

@@ -10,3 +10,8 @@ if __name__ == "__main__":
     val_dl = fetcher.val_dataloader()
     trainer = Trainer(config, train_dl, val_dl, perform_sanity_check=False)
     pass
+
+from tqdm import tqdm
+
+for item in tqdm(val_dl):
+    pass
