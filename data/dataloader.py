@@ -7,14 +7,13 @@ from transformers import AutoTokenizer
 
 class DataloaderFetcher:
     def __init__(self, config):
-        self.seed = 42
         self.config = config
+        self.seed = self.config.data.seed
         self.tokenizer = AutoTokenizer.from_pretrained(
             self.config.model.name,
             trust_remote_code=True,
             padding_side="right",
         )
-
         if self.tokenizer.pad_token is None:
             self.tokenizer.pad_token = self.tokenizer.eos_token
 
@@ -59,15 +58,15 @@ class DataloaderFetcher:
         self.prepare_dataset()
         self._train_dataloader = DataLoader(
             self.train_dataset,
-            batch_size=self.config.train.train_batch_size,
+            batch_size=self.config.train.train_mini_batch_size,
             collate_fn=self.complete_collate_fn,
-            num_workers=self.config.general.num_workers,
+            num_workers=self.config.data.num_workers,
         )
         self._val_dataloader = DataLoader(
             self.val_dataset,
-            batch_size=self.config.train.train_batch_size,
+            batch_size=self.config.train.val_batch_size,
             collate_fn=self.complete_collate_fn,
-            num_workers=self.config.general.num_workers,
+            num_workers=self.config.data.num_workers,
         )
 
     def train_dataloader(self) -> DataLoader:
