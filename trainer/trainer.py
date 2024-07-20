@@ -1,20 +1,17 @@
-from pathlib import Path
-import shutil
 import random
+import shutil
 import warnings
-from tqdm import tqdm
+from math import ceil
+from pathlib import Path
+
 import torch
 import torch.nn.functional as tofu
-from transformers import (
-    AutoModelForCausalLM,
-    AutoTokenizer,
-    get_linear_schedule_with_warmup,
-    get_cosine_schedule_with_warmup,
-    StoppingCriteriaList,
-    StoppingCriteria,
-)
 import wandb
-from math import ceil
+from tqdm import tqdm
+from transformers import (AutoModelForCausalLM, AutoTokenizer,
+                          StoppingCriteria, StoppingCriteriaList,
+                          get_cosine_schedule_with_warmup,
+                          get_linear_schedule_with_warmup)
 
 from data.s3_data_exchange import upload_directory_s3
 
@@ -32,16 +29,17 @@ class Trainer:
         self.sanity_check_complete = False
 
         self.config = config
+        self.train_args = config.train
         self.device = self.config.device
         random_id = random.randint(1, 100000)
-        self.wand_run_name = f"{self.config.model[:5]}_{self.config.parent_dataset}_len-{self.config.sequence_length}_batch-{self.config.accumulate_grad}_lr-{self.config.max_lr}--id{random_id}"
+        self.wand_run_name = f"{self.config.model[:6]}_{self.config.parent_dataset}_len-{self.config.sequence_length}_batch-{self.config.accumulate_grad}_lr-{self.config.max_lr}--id{random_id}"
 
         self.model = AutoModelForCausalLM.from_pretrained(
-            config["model"],
+            config.model.name,
             torch_dtype=torch.bfloat16,
             attn_implementation="flash_attention_2",
         )
-        self.tokenizer = AutoTokenizer.from_pretrained(config["model"])
+        self.tokenizer = AutoTokenizer.from_pretrained(config.model.name)
 
         self.scheduler_mapping = {
             "linear": get_linear_schedule_with_warmup,
@@ -49,12 +47,12 @@ class Trainer:
         }
 
         self.model.to(self.device)
-        self.accum_steps = config["accumulate_grad"]
+        self.accum_steps = config.train.accumulate_grad
 
         self.opt = torch.optim.AdamW(
             self.model.parameters(),
-            lr=self.config["max_lr"],
-            weight_decay=self.config["weight_decay"],
+            lr=self.config.train.max_lr,
+            weight_decay=self.config.train.weight_decay,
         )
 
         self.scheduler = None
@@ -71,7 +69,27 @@ class Trainer:
         if perform_sanity_check:
             self.sanity_check()
 
-    def compute_warmup(self):
+    def _compute_steps(self):
+        # steps|samples counters
+        # Prioritization: samples-steps-ratio
+        # samples = steps*batch
+        step_args = self.train_args.steps
+        full_batch_size = self.train_args.train_batch_size
+
+        if step_args.warmup_samples is not None:
+            step_args.warmup_steps = step_args.warmup_samples // full_batch_size
+        if step_args.val_every_sample is not None:
+            step_args.val_every_step = step_args.val_every_sample // full_batch_size
+        if step_args.save_every_sample is not None:
+            step_args.save_every_step = step_args.save_every_sample // full_batch_size
+        if step_args.max_train_samples is not None:
+            step_args.max_train_steps = step_args.max_train_samples // full_batch_size
+        if step_args.max_val_samples is not None:
+            step_args.max_val_steps = (
+                step_args.max_val_samples // self.train_args.val_batch_size
+            )
+
+    def _compute_warmup(self):
         if type(self.config["warmup_steps"]) is int:
             return self.config["warmup_steps"]
         elif type(self.config["warmup_steps"]) is float:
@@ -86,25 +104,13 @@ class Trainer:
 
     def define_scheduler(self):
         warmup_steps = self._compute_warmup()
-        match self.config["scheduler"]:
-            case "linear":
-                self.scheduler = get_linear_schedule_with_warmup(
-                    self.opt,
-                    warmup_steps,
-                    (len(self.train_dataloader) // self.accum_steps)
-                    * self.config["num_epochs"],
-                )
-            case "cosine":
-                self.scheduler = get_cosine_schedule_with_warmup(
-                    self.opt,
-                    warmup_steps,
-                    (len(self.train_dataloader) // self.accum_steps)
-                    * self.config["num_epochs"],
-                )
-            case _:
-                raise ValueError(
-                    f"Invalid choice of scheduler {self.config['scheduler']}"
-                )
+        scheduler_fetcher = self.scheduler_mapping[self.config.train.scheduler]
+        scheduler_fetcher(
+            self.opt,
+            warmup_steps,
+            (len(self.train_dataloader) // self.accum_steps)
+            * self.config.train.num_epochs,
+        )
 
     def run_epoch(self):
         if not self.sanity_check_complete:
