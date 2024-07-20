@@ -6,6 +6,7 @@ from pathlib import Path
 import torch
 import torch.nn.functional as tofu
 import wandb
+from torch.utils.data import DataLoader
 from tqdm import tqdm
 from transformers import (  # StoppingCriteria,; StoppingCriteriaList,
     AutoModelForCausalLM,
@@ -21,9 +22,9 @@ class Trainer:
     def __init__(
         self,
         config,
-        train_data_loader,
-        val_data_loader,
-        perform_sanity_check=True,
+        train_data_loader: DataLoader,
+        val_data_loader: DataLoader,
+        perform_sanity_check: bool = True,
     ):
         self.train_dataloader = train_data_loader
         self.val_dataloader = val_data_loader
@@ -57,18 +58,18 @@ class Trainer:
             weight_decay=self.train_args.weight_decay,
         )
 
-        self.accum_steps = None
+        self.accum_steps = 1
         self.step_args = self._compute_steps()
         self.scheduler = self.define_scheduler()
 
         self.batches_done = 0
         self.mini_batches_done = 0
-        self.loss_acc = 0
+        self.loss_acc = 0.0
 
         if perform_sanity_check:
             self.sanity_check()
 
-    def _compute_steps(self) -> None:
+    def _compute_steps(self):
         # steps|samples counters
         # Prioritization: samples-steps-ratio
         # samples = steps*accum_batch_size
@@ -133,7 +134,7 @@ class Trainer:
             num_training_steps=self.step_args.max_train_steps,
         )
 
-    def run_epoch(self):
+    def run_epoch(self) -> None:
         if not self.sanity_check_complete:
             self.validation(limit=20)
             self._save_ckpt()
@@ -147,12 +148,16 @@ class Trainer:
             if to_log is not None:
                 wandb.log(to_log)
 
-            if (to_log is not None) and (self.batches_done % self.step_args.val_every_step == 0):
+            if (to_log is not None) and (
+                self.batches_done % self.step_args.val_every_step == 0
+            ):
                 print(f"validation on step {self.batches_done}")
                 to_log = self.validation()
                 wandb.log(to_log)
 
-            if (to_log is not None) and (self.batches_done % self.step_args.save_every_step == 0):
+            if (to_log is not None) and (
+                self.batches_done % self.step_args.save_every_step == 0
+            ):
                 print(f"checkpoint on step: {self.batches_done}")
                 self._save_ckpt()
 
@@ -160,7 +165,7 @@ class Trainer:
         wandb.log(to_log)
         self._save_ckpt()
 
-    def run_training(self):
+    def run_training(self) -> None:
         total_epochs = self.config["num_epochs"]
         for epoch_id in range(total_epochs):
             print(f"Epoch {epoch_id} / {total_epochs} start")
@@ -190,7 +195,7 @@ class Trainer:
 
         return to_log
 
-    def model_step(self, batch, return_dict=False):
+    def model_step(self, batch, return_dict: bool = False):
         outputs = self.model(**batch, return_dict=True)
         targets = batch["input_ids"][:, 1:]
         logits = outputs["logits"][:, :-1]
@@ -208,7 +213,7 @@ class Trainer:
 
         return loss
 
-    def training_step(self, batch, batch_idx: int) -> bool:
+    def training_step(self, batch, batch_idx: int) -> None | dict:
 
         to_log = {}
         batch = {k: v.to(self.device) for k, v in batch.items()}
@@ -232,13 +237,13 @@ class Trainer:
             self.batches_done += 1
             self.loss_acc = 0.0
             to_log["grad_norm"] = grad_norm
-            to_log["samples"] = batch_idx*self.train_args.train_mini_batch_size
+            to_log["samples"] = batch_idx * self.train_args.train_mini_batch_size
             return to_log
 
         self.mini_batches_done += 1
         return None
 
-    def _save_ckpt(self):
+    def _save_ckpt(self) -> None:
         pth = self.general_args.checkpoints_path
         local_path = Path(f"{pth}/{self.wand_run_name}-{self.batches_done}")
         local_path.mkdir(parents=True, exist_ok=True)
@@ -264,7 +269,7 @@ class Trainer:
 
             shutil.rmtree(str(local_path))
 
-    def sanity_check(self):
+    def sanity_check(self) -> None:
         print("Running sanity check")
 
         print("Checking validation")
@@ -276,7 +281,7 @@ class Trainer:
 
         print("Checking saving")
         try:
-            self.save_hf_checkpoint()
+            self._save_ckpt()
             print("Saving checkpoint ok")
         except Exception as e:
             raise Exception(f"Saving checkpoint fails with error: {e}")
