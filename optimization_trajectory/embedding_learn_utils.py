@@ -1,12 +1,12 @@
-from torch.optim import SGD, AdamW
-from transformers import GPT2LMHeadModel, GPT2Tokenizer, GPT2Config
-import torch
-import torch.nn.functional as F
-
-from omegaconf import OmegaConf
 import copy
 
-from utils import process_batch_template, validate, general_train_step, init_wandb
+import torch
+import torch.nn.functional as F
+from omegaconf import OmegaConf
+from torch.optim import SGD, AdamW
+from transformers import GPT2Config, GPT2LMHeadModel, GPT2Tokenizer
+from utils import general_train_step, init_wandb, process_batch_template, validate
+
 from data import get_datasets
 
 """

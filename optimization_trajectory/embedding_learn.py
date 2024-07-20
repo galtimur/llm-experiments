@@ -2,14 +2,13 @@ import os.path
 
 import torch
 import wandb
-from omegaconf import OmegaConf
-
 from embedding_learn_utils import (
+    calc_dist,
+    calc_traj_length,
     setup_train,
     validate_dist,
-    calc_traj_length,
-    calc_dist,
 )
+from omegaconf import OmegaConf
 
 """
 Learning embedding

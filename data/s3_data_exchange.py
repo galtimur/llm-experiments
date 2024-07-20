@@ -1,6 +1,7 @@
-import boto3
 import os
 from pathlib import Path
+
+import boto3
 from tqdm import tqdm
 
 

@@ -1,16 +1,16 @@
-from transformers import GPT2LMHeadModel, GPT2Tokenizer, GPT2Config
-import os
-import torch
 import copy
-from torch.utils.data import DataLoader
+import os
 from functools import partial
 
-from utils import process_batch_template, validate, general_train_step, init_wandb
+import torch
+import wandb
 
 # from transformers import AdamW, SGD
 from torch.optim import SGD, AdamW
-import wandb
+from torch.utils.data import DataLoader
 from tqdm import tqdm
+from transformers import GPT2Config, GPT2LMHeadModel, GPT2Tokenizer
+from utils import general_train_step, init_wandb, process_batch_template, validate
 
 """
 Making a optimizer step only along those weignts,

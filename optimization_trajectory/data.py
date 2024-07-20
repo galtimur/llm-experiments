@@ -1,6 +1,7 @@
+from functools import partial
+
 from datasets import load_dataset
 from torch.utils.data import DataLoader
-from functools import partial
 from utils import process_batch_template
 
 

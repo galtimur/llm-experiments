@@ -10,7 +10,7 @@ class DataloaderFetcher:
         self.seed = 42
         self.config = config
         self.tokenizer = AutoTokenizer.from_pretrained(
-            self.config.model.model,
+            self.config.model.name,
             trust_remote_code=True,
             padding_side="right",
         )

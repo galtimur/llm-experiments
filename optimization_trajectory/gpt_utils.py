@@ -1,10 +1,11 @@
-from torch.optim import SGD, AdamW
-from transformers import GPT2LMHeadModel, GPT2Tokenizer, GPT2Config
 import torch
 from embedding_learn_utils import calc_traj_length
 from omegaconf import OmegaConf
-from data import get_datasets
+from torch.optim import SGD, AdamW
 from tqdm import tqdm
+from transformers import GPT2Config, GPT2LMHeadModel, GPT2Tokenizer
+
+from data import get_datasets
 
 """
 Learning embedding

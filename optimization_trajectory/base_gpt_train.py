@@ -2,10 +2,9 @@ import os.path
 
 import torch
 import wandb
+from gpt_utils import setup_train, validate
 from omegaconf import OmegaConf
 from tqdm import tqdm
-
-from gpt_utils import setup_train, validate
 
 """
 Learning embedding

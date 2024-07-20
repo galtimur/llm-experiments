@@ -1,17 +1,17 @@
-from transformers import GPT2LMHeadModel, GPT2Tokenizer, GPT2Config
+import copy
 import os
+
 import torch
 import torch.nn as nn
-import copy
-from torch.utils.data import DataLoader
-
-from utils import track_params
+import wandb
+from datasets import load_dataset
 
 # from transformers import AdamW, SGD
 from torch.optim import SGD, AdamW
-import wandb
+from torch.utils.data import DataLoader
 from tqdm import tqdm
-from datasets import load_dataset
+from transformers import GPT2Config, GPT2LMHeadModel, GPT2Tokenizer
+from utils import track_params
 
 """
 Making a optimizer step only along those weights,
