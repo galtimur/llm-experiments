@@ -21,6 +21,8 @@ class GeneralArguments:
 class ModelArguments:
     sequence_length: int = field()
     name: str | None = field(default=None)
+    pretrained: bool = field(default=True)
+    use_flash_attn: bool = field(default=True)
 
 
 @dataclass

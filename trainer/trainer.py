@@ -9,6 +9,7 @@ import wandb
 from torch.utils.data import DataLoader
 from tqdm import tqdm
 from transformers import (  # StoppingCriteria,; StoppingCriteriaList,
+    AutoConfig,
     AutoModelForCausalLM,
     AutoTokenizer,
     get_cosine_schedule_with_warmup,
@@ -38,20 +39,13 @@ class Trainer:
         random_id = random.randint(1, 100000)
         self.wand_run_name = f"{self.model_args.name[:6]}_len-{self.model_args.sequence_length}_bs-{self.train_args.train_batch_size}_lr-{self.train_args.max_lr}--id{random_id}"
 
-        self.model = AutoModelForCausalLM.from_pretrained(
-            self.model_args.name,
-            torch_dtype=torch.bfloat16,
-            attn_implementation="flash_attention_2",
-        )
-        self.tokenizer = AutoTokenizer.from_pretrained(self.model_args.name)
+        self.model, self.tokenizer = self.get_model()
 
         self.scheduler_mapping = {
             "linear": get_linear_schedule_with_warmup,
             "cosine": get_cosine_schedule_with_warmup,
         }
 
-        self.model.to(self.device)
-        self.model.train()
         self.opt = torch.optim.AdamW(
             self.model.parameters(),
             lr=float(self.train_args.max_lr),
@@ -68,6 +62,32 @@ class Trainer:
 
         if perform_sanity_check:
             self.sanity_check()
+
+    def get_model(self) -> tuple[AutoModelForCausalLM, AutoTokenizer]:
+        if self.train_args.precision == "fp32":
+            dtype = torch.float32
+        else:
+            dtype = torch.bfloat16
+        if self.model_args.use_flash_attn:
+            flash_attn = "flash_attention_2"
+        else:
+            flash_attn = None
+        if self.model_args.pretrained:
+            model = AutoModelForCausalLM.from_pretrained(
+                self.model_args.name,
+                torch_dtype=dtype,
+                attn_implementation=flash_attn,
+            )
+        else:
+            config_model = AutoConfig.from_pretrained(self.model_args.name)
+            model = AutoModelForCausalLM.from_config(
+                config_model, torch_dtype=dtype, attn_implementation=flash_attn
+            )
+        tokenizer = AutoTokenizer.from_pretrained(self.model_args.name)
+        model.to(self.device)
+        model.train()
+
+        return model, tokenizer
 
     def _compute_steps(self):
         # steps|samples counters
@@ -199,6 +219,7 @@ class Trainer:
         outputs = self.model(**batch, return_dict=True)
         targets = batch["input_ids"][:, 1:]
         logits = outputs["logits"][:, :-1]
+        # Is it neccesary?
         logits = logits.to(torch.float32)
         loss_mask = batch["attention_mask"][:, 1:]
         loss_tensor = tofu.cross_entropy(

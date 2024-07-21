@@ -6,10 +6,12 @@ general:
   upload_to_s3: False
 model:
   sequence_length: 512
-  name: "deepseek-ai/deepseek-coder-1.3b-base" # "codellama/CodeLlama-7b-hf"
+  name: "HuggingFaceTB/SmolLM-135M"# "deepseek-ai/deepseek-coder-1.3b-base" # "codellama/CodeLlama-7b-hf"
+  pretrained: true
+  use_flash_attn: true
 train:
-  train_mini_batch_size: 4
-  train_batch_size: 128
+  train_mini_batch_size: 2
+  train_batch_size: 8
   val_batch_size: 4
   num_gpus: 8
   precision: "bf16"
