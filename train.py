@@ -9,6 +9,10 @@ if __name__ == "__main__":
     train_dl = fetcher.train_dataloader()
     val_dl = fetcher.val_dataloader()
     trainer = Trainer(config, train_dl, val_dl, perform_sanity_check=False)
+
+    # trainer.sanity_check()
+    trainer.run_training()
+
     pass
 
 from tqdm import tqdm

@@ -29,7 +29,6 @@ class Trainer:
     ):
         self.train_dataloader = train_data_loader
         self.val_dataloader = val_data_loader
-        self.sanity_check_complete = False
 
         self.config = config
         self.train_args = config.train
@@ -39,6 +38,7 @@ class Trainer:
         random_id = random.randint(1, 100000)
         self.wand_run_name = f"{self.model_args.name[:6]}_len-{self.model_args.sequence_length}_bs-{self.train_args.train_batch_size}_lr-{self.train_args.max_lr}--id{random_id}"
 
+        self.sanity_check_complete = self.train_args.do_sanity_check
         self.model, self.tokenizer = self.get_model()
 
         self.scheduler_mapping = {
@@ -162,7 +162,7 @@ class Trainer:
 
         for batch_idx, batch in tqdm(
             enumerate(self.train_dataloader, start=1),
-            total=len(self.step_args.max_train_steps),
+            total=self.step_args.max_train_steps,
         ):
             to_log = self.training_step(batch, batch_idx)
             if to_log is not None:
@@ -186,7 +186,7 @@ class Trainer:
         self._save_ckpt()
 
     def run_training(self) -> None:
-        total_epochs = self.config["num_epochs"]
+        total_epochs = self.step_args.num_epochs
         for epoch_id in range(total_epochs):
             print(f"Epoch {epoch_id} / {total_epochs} start")
             self.run_epoch()

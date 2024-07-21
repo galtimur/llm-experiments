@@ -66,6 +66,7 @@ class TrainArguments:
     num_gpus: int = field(default=1)
     precision: str = field(default="bf16")
     max_norm: int = field(default=10000)
+    do_sanity_check: bool = field(default=True)
 
 
 @dataclass

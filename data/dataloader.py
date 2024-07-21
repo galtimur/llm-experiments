@@ -52,6 +52,7 @@ class DataloaderFetcher:
             path=self.config.data.val_name_or_path,
             name=self.config.data.val_ds_subset,
         )["test"]
+        val_ds = val_ds.filter(lambda x: x["text"].strip() != "")
         self.val_dataset = val_ds.shuffle(self.seed)
 
     def setup(self):

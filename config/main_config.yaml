@@ -2,7 +2,7 @@ general:
   s3_bucket: 'jettrain-experiments'
   wandb_project: 'llm-experiments'
   num_workers: 1
-  checkpoints_path: 'mnt/data2/galimzyanov/llm-experiments/gpt2-zip-compression/'
+  checkpoints_path: '/mnt/data2/galimzyanov/llm-experiments/gpt2-zip-compression/'
   upload_to_s3: False
 model:
   sequence_length: 512
@@ -38,6 +38,7 @@ train:
   weight_decay: 0.00
   max_norm: 10000
   scheduler: 'cosine'
+  do_sanity_check: false
 data:
   train_name_or_path: "openwebtext"
   train_ds_subset: null
@@ -45,4 +46,4 @@ data:
   val_ds_subset: "wikitext-103-raw-v1"
   text_key: "text"
   num_workers: 0
-  processed_folder: 'mnt/data2/galimzyanov/llm-experiments/data/'
+  processed_folder: '/mnt/data2/galimzyanov/llm-experiments/data/'
