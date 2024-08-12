@@ -37,8 +37,6 @@ class Trainer:
         self.model_args = config.model
         self.general_args = self.config.general
         self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-        random_id = random.randint(1, 100000)
-        self.wand_run_name = f"{self.model_args.name[:6]}_len-{self.model_args.sequence_length}_bs-{self.train_args.train_batch_size}_lr-{self.train_args.max_lr}--id{random_id}"
 
         self.sanity_check_complete = self.train_args.do_sanity_check
         self.model, self.tokenizer = self.get_model()
@@ -161,9 +159,12 @@ class Trainer:
         )
 
     def wandb_init(self):
+
+        # random_id = random.randint(1, 100000)
         model_name = self.config.model.name.split("/")[-1]
         os.environ['WANDB_BASE_URL'] = self.config.general.wandb_url
-        wandb_run_name = model_name
+        self.wandb_run_name = model_name
+        # self.wand_run_name = f"{self.model_args.name[:6]}_len-{self.model_args.sequence_length}_bs-{self.train_args.train_batch_size}_lr-{self.train_args.max_lr}--id{random_id}"
         # wandb_run_name += f"_cr_{self.train_args.compression_rate}"
         # wandb_run_name += f"_seg_{self.train_args.segment_length}"
         # wandb_run_name += f"_batch_{self.batch_size_global}"
@@ -172,7 +173,7 @@ class Trainer:
             project=self.config.general.wandb_project,
             entity=self.config.general.wandb_entity,
             config=self.config,
-            name=wandb_run_name,
+            name=self.wandb_run_name,
         )
         wandb.define_metric("tokens")
         wandb.define_metric(f"train/loss vs tokens", step_metric="tokens")
@@ -298,29 +299,31 @@ class Trainer:
 
     def _save_ckpt(self) -> None:
         pth = self.general_args.checkpoints_path
-        local_path = Path(f"{pth}/{self.wand_run_name}-{self.batches_done}")
+        local_path = Path(f"{pth}/{self.wandb_run_name}-{self.batches_done}")
         local_path.mkdir(parents=True, exist_ok=True)
 
         self.model.save_pretrained(str(local_path))
         self.tokenizer.save_pretrained(str(local_path))
-
         if self.general_args.upload_to_s3:
-            s3_path = self.general_args.s3_checkpoint_path
-            attempts = 0
-            while attempts < 3:
-                try:
-                    upload_directory_s3(
-                        local_path,
-                        f"{s3_path}/{self.wand_run_name}-{self.batches_done}/",
-                        self.general_args.s3_bucket,
-                    )
-                    attempts = 3
+            self.save_s3(local_path)
 
-                except Exception as e:
-                    print("While saving checkpoint:", e)
-                    attempts += 1
+    def _save_s3(self, local_path):
+        s3_path = self.general_args.s3_checkpoint_path
+        attempts = 0
+        while attempts < 3:
+            try:
+                upload_directory_s3(
+                    local_path,
+                    f"{s3_path}/{self.wand_run_name}-{self.batches_done}/",
+                    self.general_args.s3_bucket,
+                )
+                attempts = 3
 
-            shutil.rmtree(str(local_path))
+            except Exception as e:
+                print("While saving checkpoint:", e)
+                attempts += 1
+
+        shutil.rmtree(str(local_path))
 
     def sanity_check(self) -> None:
         print("Running sanity check")
