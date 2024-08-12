@@ -12,6 +12,7 @@ if __name__ == "__main__":
 
     # trainer.sanity_check()
     trainer.run_training()
+    # trainer.validation()
 
     pass
 

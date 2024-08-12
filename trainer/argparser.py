@@ -13,6 +13,8 @@ class GeneralArguments:
     checkpoints_path: str
     s3_bucket: str | None = field(default=None)
     wandb_project: str | None = field(default=None)
+    wandb_entity: str | None = field(default=None)
+    wandb_url: str | None = field(default=None)
     upload_to_s3: bool = field(default=False)
     s3_checkpoint_path: str | None = field(default=None)
 

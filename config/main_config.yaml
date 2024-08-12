@@ -1,5 +1,7 @@
 general:
   s3_bucket: 'jettrain-experiments'
+  wandb_url: "https://api.wandb.ai"
+  wandb_entity: 'timur-galimzyanov'
   wandb_project: 'llm-experiments'
   num_workers: 1
   checkpoints_path: '/mnt/data2/galimzyanov/llm-experiments/gpt2-zip-compression/'
@@ -12,7 +14,7 @@ model:
 train:
   train_mini_batch_size: 2
   train_batch_size: 8
-  val_batch_size: 4
+  val_batch_size: 16
   num_gpus: 8
   precision: "bf16"
   lora:
@@ -23,7 +25,7 @@ train:
   # samples = steps*full_batch_size
   steps:
     num_epochs: 1
-    max_train_samples: 1_000_000
+    max_train_samples: 500
     max_train_steps: 250_000
     warmup_samples: 4000
     warmup_steps_or_ratio: 1000

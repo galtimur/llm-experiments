@@ -2,6 +2,7 @@ import random
 import shutil
 from math import ceil
 from pathlib import Path
+import os
 
 import torch
 import torch.nn.functional as tofu
@@ -19,6 +20,7 @@ from transformers import (  # StoppingCriteria,; StoppingCriteriaList,
 from data.s3_data_exchange import upload_directory_s3
 
 
+# TODO add wandb_init
 class Trainer:
     def __init__(
         self,
@@ -59,6 +61,7 @@ class Trainer:
         self.batches_done = 0
         self.mini_batches_done = 0
         self.loss_acc = 0.0
+        self.processed_tokens = 0
 
         if perform_sanity_check:
             self.sanity_check()
@@ -112,15 +115,18 @@ class Trainer:
             step_args.val_every_step = step_args.val_every_sample // full_batch_size
         if step_args.save_every_sample is not None:
             step_args.save_every_step = step_args.save_every_sample // full_batch_size
-        if step_args.max_train_samples is not None:
-            step_args.max_train_steps = step_args.max_train_samples // full_batch_size
-        elif step_args.max_train_steps is None:
-            step_args.max_train_steps = (
+        max_train_steps = (
                 step_args.num_epochs
                 * len(self.train_dataloader)
                 * self.train_args.train_mini_batch_size
                 // full_batch_size
-            )
+        )
+        if step_args.max_train_samples is not None:
+            step_args.max_train_steps = min(step_args.max_train_samples // full_batch_size, max_train_steps)
+        elif step_args.max_train_steps is None:
+            step_args.max_train_steps = max_train_steps
+        else:
+            step_args.max_train_steps = min(step_args.max_train_steps, step_args.max_train_steps)
         if step_args.max_val_samples is not None:
             step_args.max_val_steps = (
                 step_args.max_val_samples // self.train_args.val_batch_size
@@ -146,7 +152,7 @@ class Trainer:
                 f"Invalid value for `warmup_steps`, got {type(steps_or_ratio)}"
             )
 
-    def define_scheduler(self):
+    def define_scheduler(self) -> None:
         scheduler_fetcher = self.scheduler_mapping[self.train_args.scheduler]
         return scheduler_fetcher(
             optimizer=self.opt,
@@ -154,25 +160,41 @@ class Trainer:
             num_training_steps=self.step_args.max_train_steps,
         )
 
-    def run_epoch(self) -> None:
-        if not self.sanity_check_complete:
-            self.validation(limit=20)
-            self._save_ckpt()
-            self.sanity_check_complete = True
+    def wandb_init(self):
+        model_name = self.config.model.name.split("/")[-1]
+        os.environ['WANDB_BASE_URL'] = self.config.general.wandb_url
+        wandb_run_name = model_name
+        # wandb_run_name += f"_cr_{self.train_args.compression_rate}"
+        # wandb_run_name += f"_seg_{self.train_args.segment_length}"
+        # wandb_run_name += f"_batch_{self.batch_size_global}"
+        # wandb_run_name += f"{model_name}"
+        wandb.init(
+            project=self.config.general.wandb_project,
+            entity=self.config.general.wandb_entity,
+            config=self.config,
+            name=wandb_run_name,
+        )
+        wandb.define_metric("tokens")
+        wandb.define_metric(f"train/loss vs tokens", step_metric="tokens")
+        wandb.define_metric(f"val/loss vs tokens", step_metric="tokens")
+        wandb.run.log_code(".")
 
-        for batch_idx, batch in tqdm(
-            enumerate(self.train_dataloader, start=1),
-            total=self.step_args.max_train_steps,
-        ):
+    def run_epoch(self) -> None:
+        pbar = tqdm(total=self.step_args.max_train_steps)
+        for batch_idx, batch in enumerate(self.train_dataloader, start=1):
+            self.processed_tokens += batch["input_ids"].numel()
             to_log = self.training_step(batch, batch_idx)
             if to_log is not None:
+                to_log.update({"tokens": self.processed_tokens})
                 wandb.log(to_log)
+                pbar.update()
 
             if (to_log is not None) and (
                 self.batches_done % self.step_args.val_every_step == 0
             ):
                 print(f"validation on step {self.batches_done}")
                 to_log = self.validation()
+                to_log.update({"tokens": self.processed_tokens})
                 wandb.log(to_log)
 
             if (to_log is not None) and (
@@ -180,12 +202,19 @@ class Trainer:
             ):
                 print(f"checkpoint on step: {self.batches_done}")
                 self._save_ckpt()
+            if self.batches_done > self.step_args.max_train_steps:
+                break
 
         to_log = self.validation()
         wandb.log(to_log)
         self._save_ckpt()
 
     def run_training(self) -> None:
+        self.wandb_init()
+        if not self.sanity_check_complete:
+            self.validation(limit=20)
+            self._save_ckpt()
+            self.sanity_check_complete = True
         total_epochs = self.step_args.num_epochs
         for epoch_id in range(total_epochs):
             print(f"Epoch {epoch_id} / {total_epochs} start")
@@ -196,7 +225,7 @@ class Trainer:
         full_val_loss = 0
         if limit < 0:
             limit = len(self.val_dataloader)
-        for batch_idx, batch in enumerate(self.val_dataloader, start=1):
+        for batch_idx, batch in tqdm(enumerate(self.val_dataloader, start=1), total=limit):
             batch = {k: v.to(self.device) for k, v in batch.items()}
 
             with torch.no_grad():
@@ -209,6 +238,7 @@ class Trainer:
         val_loss_mean = full_val_loss / batch_idx
         to_log = {
             "val/loss": val_loss_mean,
+            "val/loss vs tokens": val_loss_mean,
         }
         self.model.train()
         # to_log.update(log_batch)
@@ -253,6 +283,8 @@ class Trainer:
             self.scheduler.step()
 
             to_log["train/loss"] = self.loss_acc
+            to_log["train/loss vs tokens"] = self.loss_acc
+
             to_log["lr"] = lr
 
             self.batches_done += 1
