@@ -1,5 +1,6 @@
 import random
 import shutil
+import gzip
 from math import ceil
 from pathlib import Path
 import os
@@ -19,6 +20,10 @@ from transformers import (  # StoppingCriteria,; StoppingCriteriaList,
 
 from data.s3_data_exchange import upload_directory_s3
 
+def compress_model(input_file_path, output_file_path):
+    with open(input_file_path, 'rb') as f_in:
+        with gzip.open(output_file_path, 'wb') as f_out:
+            shutil.copyfileobj(f_in, f_out)
 
 # TODO add wandb_init
 class Trainer:
@@ -178,11 +183,13 @@ class Trainer:
         wandb.define_metric("tokens")
         wandb.define_metric(f"train/loss vs tokens", step_metric="tokens")
         wandb.define_metric(f"val/loss vs tokens", step_metric="tokens")
+        wandb.define_metric(f"train/compress_ratio vs tokens", step_metric="tokens")
+
         wandb.run.log_code(".")
 
     def run_epoch(self) -> None:
         pbar = tqdm(total=self.step_args.max_train_steps)
-        for batch_idx, batch in enumerate(self.train_dataloader, start=1):
+        for batch_idx, batch in enumerate(self.train_dataloader, start=0):
             self.processed_tokens += batch["input_ids"].numel()
             to_log = self.training_step(batch, batch_idx)
             if to_log is not None:
@@ -202,7 +209,13 @@ class Trainer:
                 self.batches_done % self.step_args.save_every_step == 0
             ):
                 print(f"checkpoint on step: {self.batches_done}")
-                self._save_ckpt()
+                model_path = self._save_ckpt()
+                compress_ratio = self.calculate_zip_ratio(model_path)
+                log_dict = {"tokens": self.processed_tokens,
+                            "train/compress_ratio": compress_ratio,
+                            "train/compress_ratio vs tokens": compress_ratio}
+                wandb.log(log_dict)
+
             if self.batches_done > self.step_args.max_train_steps:
                 break
 
@@ -297,6 +310,17 @@ class Trainer:
         self.mini_batches_done += 1
         return None
 
+    @staticmethod
+    def calculate_zip_ratio(model_foilder):
+        model_file = model_foilder / "model.safetensors"
+        compressed_file = model_foilder.parent / f"{model_foilder.name}_model.zip"
+        compress_model(model_file, compressed_file)
+        model_size = os.path.getsize(model_file)
+        gzip_size = os.path.getsize(compressed_file)
+        compression_ratio = gzip_size/model_size
+
+        return compression_ratio
+
     def _save_ckpt(self) -> None:
         pth = self.general_args.checkpoints_path
         local_path = Path(f"{pth}/{self.wandb_run_name}-{self.batches_done}")
@@ -306,6 +330,9 @@ class Trainer:
         self.tokenizer.save_pretrained(str(local_path))
         if self.general_args.upload_to_s3:
             self.save_s3(local_path)
+
+        return local_path
+
 
     def _save_s3(self, local_path):
         s3_path = self.general_args.s3_checkpoint_path
