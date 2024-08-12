@@ -189,7 +189,7 @@ class Trainer:
 
     def run_epoch(self) -> None:
         pbar = tqdm(total=self.step_args.max_train_steps)
-        for batch_idx, batch in enumerate(self.train_dataloader, start=0):
+        for batch_idx, batch in enumerate(self.train_dataloader, start=1):
             self.processed_tokens += batch["input_ids"].numel()
             to_log = self.training_step(batch, batch_idx)
             if to_log is not None:
@@ -198,7 +198,7 @@ class Trainer:
                 pbar.update()
 
             if (to_log is not None) and (
-                self.batches_done % self.step_args.val_every_step == 0
+                    (self.batches_done-1) % self.step_args.val_every_step == 0
             ):
                 print(f"validation on step {self.batches_done}")
                 to_log = self.validation()
@@ -206,7 +206,7 @@ class Trainer:
                 wandb.log(to_log)
 
             if (to_log is not None) and (
-                self.batches_done % self.step_args.save_every_step == 0
+                    (self.batches_done-1) % self.step_args.save_every_step == 0
             ):
                 print(f"checkpoint on step: {self.batches_done}")
                 model_path = self._save_ckpt()
