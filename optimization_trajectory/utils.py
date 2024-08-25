@@ -1,6 +1,7 @@
 import copy
 
 import torch
+
 import wandb
 
 
@@ -55,11 +56,9 @@ def filter_grad(model, mask_dict, threshold, type, apply_saved_mask):
 
 
 def track_params(model, model_start, model_previous, model_start_1):
-    num_el = (
-        l2norm
-    ) = (
-        l1norm
-    ) = dist = dist1 = grad_step = dev_step = sum_step = sum_dist = dev_dist = 0
+    num_el = l2norm = l1norm = dist = dist1 = grad_step = dev_step = sum_step = (
+        sum_dist
+    ) = dev_dist = 0
     for (name, param), (_, param_start), (_, param_prev), (_, param_start_1) in zip(
         model.named_parameters(),
         model_start.named_parameters(),

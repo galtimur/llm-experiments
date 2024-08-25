@@ -2,7 +2,6 @@ import copy
 import os
 
 import torch
-import wandb
 from datasets import load_dataset
 
 # from transformers import AdamW, SGD
@@ -11,6 +10,8 @@ from torch.utils.data import DataLoader
 from tqdm import tqdm
 from transformers import GPT2Config, GPT2LMHeadModel, GPT2Tokenizer
 from utils import track_params
+
+import wandb
 
 """
 Making a optimizer step only along those weights,

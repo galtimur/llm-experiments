@@ -1,13 +1,11 @@
-import random
-import shutil
 import gzip
+import os
+import shutil
 from math import ceil
 from pathlib import Path
-import os
 
 import torch
 import torch.nn.functional as tofu
-import wandb
 from torch.utils.data import DataLoader
 from tqdm import tqdm
 from transformers import (  # StoppingCriteria,; StoppingCriteriaList,
@@ -18,15 +16,19 @@ from transformers import (  # StoppingCriteria,; StoppingCriteriaList,
     get_linear_schedule_with_warmup,
 )
 
+import wandb
 from data.s3_data_exchange import upload_directory_s3
 
+
 def compress_model(input_file_path, output_file_path):
-    with open(input_file_path, 'rb') as f_in:
-        with gzip.open(output_file_path, 'wb') as f_out:
+    with open(input_file_path, "rb") as f_in:
+        with gzip.open(output_file_path, "wb") as f_out:
             shutil.copyfileobj(f_in, f_out)
+
 
 def count_parameters(model):
     return sum(p.numel() for p in model.parameters())
+
 
 # TODO add wandb_init
 class Trainer:
@@ -36,8 +38,8 @@ class Trainer:
         train_data_loader: DataLoader,
         val_data_loader: DataLoader,
         perform_sanity_check: bool = True,
-        model = None,
-        tokenizer = None
+        model=None,
+        tokenizer=None,
     ):
         self.train_dataloader = train_data_loader
         self.val_dataloader = val_data_loader
@@ -136,17 +138,21 @@ class Trainer:
         if step_args.save_every_sample is not None:
             step_args.save_every_step = step_args.save_every_sample // full_batch_size
         max_train_steps = (
-                step_args.num_epochs
-                * len(self.train_dataloader)
-                * self.train_args.train_mini_batch_size
-                // full_batch_size
+            step_args.num_epochs
+            * len(self.train_dataloader)
+            * self.train_args.train_mini_batch_size
+            // full_batch_size
         )
         if step_args.max_train_samples is not None:
-            step_args.max_train_steps = min(step_args.max_train_samples // full_batch_size, max_train_steps)
+            step_args.max_train_steps = min(
+                step_args.max_train_samples // full_batch_size, max_train_steps
+            )
         elif step_args.max_train_steps is None:
             step_args.max_train_steps = max_train_steps
         else:
-            step_args.max_train_steps = min(step_args.max_train_steps, step_args.max_train_steps)
+            step_args.max_train_steps = min(
+                step_args.max_train_steps, step_args.max_train_steps
+            )
         if step_args.max_val_samples is not None:
             step_args.max_val_steps = (
                 step_args.max_val_samples // self.train_args.val_batch_size
@@ -184,7 +190,7 @@ class Trainer:
 
         # random_id = random.randint(1, 100000)
         model_name = self.config.model.name.split("/")[-1]
-        os.environ['WANDB_BASE_URL'] = self.config.general.wandb_url
+        os.environ["WANDB_BASE_URL"] = self.config.general.wandb_url
         self.wandb_run_name = model_name
         # self.wand_run_name = f"{self.model_args.name[:6]}_len-{self.model_args.sequence_length}_bs-{self.train_args.train_batch_size}_lr-{self.train_args.max_lr}--id{random_id}"
         # wandb_run_name += f"_cr_{self.train_args.compression_rate}"
@@ -198,9 +204,9 @@ class Trainer:
             name=self.wandb_run_name,
         )
         wandb.define_metric("tokens")
-        wandb.define_metric(f"train/loss vs tokens", step_metric="tokens")
-        wandb.define_metric(f"val/loss vs tokens", step_metric="tokens")
-        wandb.define_metric(f"train/compress_ratio vs tokens", step_metric="tokens")
+        wandb.define_metric("train/loss vs tokens", step_metric="tokens")
+        wandb.define_metric("val/loss vs tokens", step_metric="tokens")
+        wandb.define_metric("train/compress_ratio vs tokens", step_metric="tokens")
 
         wandb.run.log_code(".")
 
@@ -215,7 +221,7 @@ class Trainer:
                 pbar.update()
 
             if (to_log is not None) and (
-                    (self.batches_done-1) % self.step_args.val_every_step == 0
+                (self.batches_done - 1) % self.step_args.val_every_step == 0
             ):
                 print(f"validation on step {self.batches_done}")
                 to_log = self.validation()
@@ -223,14 +229,16 @@ class Trainer:
                 wandb.log(to_log)
 
             if (to_log is not None) and (
-                    (self.batches_done-1) % self.step_args.save_every_step == 0
+                (self.batches_done - 1) % self.step_args.save_every_step == 0
             ):
                 print(f"checkpoint on step: {self.batches_done}")
                 model_path = self._save_ckpt()
                 compress_ratio = self.calculate_zip_ratio(model_path)
-                log_dict = {"tokens": self.processed_tokens,
-                            "train/compress_ratio": compress_ratio,
-                            "train/compress_ratio vs tokens": compress_ratio}
+                log_dict = {
+                    "tokens": self.processed_tokens,
+                    "train/compress_ratio": compress_ratio,
+                    "train/compress_ratio vs tokens": compress_ratio,
+                }
                 wandb.log(log_dict)
 
             if self.batches_done > self.step_args.max_train_steps:
@@ -256,7 +264,9 @@ class Trainer:
         full_val_loss = 0
         if limit < 0:
             limit = len(self.val_dataloader)
-        for batch_idx, batch in tqdm(enumerate(self.val_dataloader, start=1), total=limit):
+        for batch_idx, batch in tqdm(
+            enumerate(self.val_dataloader, start=1), total=limit
+        ):
             batch = {k: v.to(self.device) for k, v in batch.items()}
 
             with torch.no_grad(), torch.autocast(device_type="cuda"):
@@ -335,7 +345,7 @@ class Trainer:
         compress_model(model_file, compressed_file)
         model_size = os.path.getsize(model_file)
         gzip_size = os.path.getsize(compressed_file)
-        compression_ratio = gzip_size/model_size
+        compression_ratio = gzip_size / model_size
         os.remove(compressed_file)
 
         return compression_ratio
@@ -351,7 +361,6 @@ class Trainer:
             self.save_s3(local_path)
 
         return local_path
-
 
     def _save_s3(self, local_path):
         s3_path = self.general_args.s3_checkpoint_path

@@ -2,13 +2,14 @@ import os
 from collections import deque
 
 import torch
-import wandb
 
 # from transformers import AdamW, SGD
 from torch.optim import SGD, AdamW
 from torch.utils.data import DataLoader
 from tqdm import tqdm
 from transformers import GPT2Config, GPT2LMHeadModel, GPT2Tokenizer
+
+import wandb
 
 """
 Making a step by each matrix step by step.

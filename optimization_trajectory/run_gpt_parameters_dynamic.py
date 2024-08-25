@@ -3,7 +3,6 @@ import os
 from functools import partial
 
 import torch
-import wandb
 
 # from transformers import AdamW, SGD
 from torch.optim import SGD, AdamW
@@ -11,6 +10,8 @@ from torch.utils.data import DataLoader
 from tqdm import tqdm
 from transformers import GPT2Config, GPT2LMHeadModel, GPT2Tokenizer
 from utils import general_train_step, init_wandb, process_batch_template, validate
+
+import wandb
 
 """
 Making a optimizer step only along those weignts,
