@@ -8,15 +8,11 @@ if __name__ == "__main__":
     fetcher = DataloaderFetcher(config)
     train_dl = fetcher.train_dataloader()
     val_dl = fetcher.val_dataloader()
+    # item = next(iter(val_dl))
     trainer = Trainer(config, train_dl, val_dl, perform_sanity_check=False)
 
     # trainer.sanity_check()
     trainer.run_training()
     # trainer.validation()
 
-    pass
-
-from tqdm import tqdm
-
-for item in tqdm(val_dl):
     pass

@@ -25,6 +25,9 @@ def compress_model(input_file_path, output_file_path):
         with gzip.open(output_file_path, 'wb') as f_out:
             shutil.copyfileobj(f_in, f_out)
 
+def count_parameters(model):
+    return sum(p.numel() for p in model.parameters())
+
 # TODO add wandb_init
 class Trainer:
     def __init__(
@@ -33,10 +36,14 @@ class Trainer:
         train_data_loader: DataLoader,
         val_data_loader: DataLoader,
         perform_sanity_check: bool = True,
+        model = None,
+        tokenizer = None
     ):
         self.train_dataloader = train_data_loader
         self.val_dataloader = val_data_loader
 
+        self.model = model
+        self.tokenizer = tokenizer
         self.config = config
         self.train_args = config.train
         self.model_args = config.model
@@ -78,18 +85,28 @@ class Trainer:
             flash_attn = "flash_attention_2"
         else:
             flash_attn = None
-        if self.model_args.pretrained:
+        if (self.model is not None) and (self.tokenizer is not None):
+            model = self.model
+            tokenizer = self.tokenizer
+        elif self.model_args.pretrained:
             model = AutoModelForCausalLM.from_pretrained(
                 self.model_args.name,
                 torch_dtype=dtype,
                 attn_implementation=flash_attn,
             )
+            tokenizer = AutoTokenizer.from_pretrained(self.model_args.name)
         else:
             config_model = AutoConfig.from_pretrained(self.model_args.name)
+            # model_pars = self.model_args.parameters
+            # config_model.hidden_size = model_pars["hidden_dim"]
+            # config_model.intermediate_size = model_pars["ff_dim"]
+            # config_model.num_hidden_layers = model_pars["num_layers"]
             model = AutoModelForCausalLM.from_config(
                 config_model, torch_dtype=dtype, attn_implementation=flash_attn
             )
-        tokenizer = AutoTokenizer.from_pretrained(self.model_args.name)
+            tokenizer = AutoTokenizer.from_pretrained(self.model_args.name)
+        num_pars = count_parameters(model)
+        print(f"Number of model parameters = {num_pars/1e6:.0f}M")
         model.to(self.device)
         model.train()
 
@@ -242,7 +259,7 @@ class Trainer:
         for batch_idx, batch in tqdm(enumerate(self.val_dataloader, start=1), total=limit):
             batch = {k: v.to(self.device) for k, v in batch.items()}
 
-            with torch.no_grad():
+            with torch.no_grad(), torch.autocast(device_type="cuda"):
                 outputs = self.model_step(batch, return_dict=True)
                 full_val_loss += outputs["loss"].item()
 
@@ -264,7 +281,7 @@ class Trainer:
         targets = batch["input_ids"][:, 1:]
         logits = outputs["logits"][:, :-1]
         # Is it neccesary?
-        logits = logits.to(torch.float32)
+        # logits = logits.to(torch.float32)
         loss_mask = batch["attention_mask"][:, 1:]
         loss_tensor = tofu.cross_entropy(
             logits.reshape(-1, logits.shape[-1]), targets.reshape(-1), reduction="none"
@@ -283,7 +300,8 @@ class Trainer:
         to_log = {}
         batch = {k: v.to(self.device) for k, v in batch.items()}
 
-        loss = self.model_step(batch) / self.accum_steps
+        with torch.autocast(device_type="cuda"):
+            loss = self.model_step(batch) / self.accum_steps
         loss.backward()
 
         self.loss_acc += loss.item()
@@ -311,13 +329,14 @@ class Trainer:
         return None
 
     @staticmethod
-    def calculate_zip_ratio(model_foilder):
-        model_file = model_foilder / "model.safetensors"
-        compressed_file = model_foilder.parent / f"{model_foilder.name}_model.zip"
+    def calculate_zip_ratio(model_folder):
+        model_file = model_folder / "model.safetensors"
+        compressed_file = model_folder.parent / f"{model_folder.name}_model.zip"
         compress_model(model_file, compressed_file)
         model_size = os.path.getsize(model_file)
         gzip_size = os.path.getsize(compressed_file)
         compression_ratio = gzip_size/model_size
+        os.remove(compressed_file)
 
         return compression_ratio
 

@@ -7,16 +7,21 @@ general:
   checkpoints_path: '/mnt/data2/galimzyanov/llm-experiments/gpt2-zip-compression/'
   upload_to_s3: False
 model:
-  sequence_length: 512
-  name: "HuggingFaceTB/SmolLM-135M"# "deepseek-ai/deepseek-coder-1.3b-base" # "codellama/CodeLlama-7b-hf"
+  sequence_length: 1024
+  name: "openai-community/gpt2"# "meta-llama/Meta-Llama-3.1-8B" # "HuggingFaceTB/SmolLM-135M"# "deepseek-ai/deepseek-coder-1.3b-base" # "codellama/CodeLlama-7b-hf"
   pretrained: False
   use_flash_attn: true
+  parameters:
+    num_layers: 16
+    hidden_dim: 1024
+    ff_dim: 4096
 train:
-  train_mini_batch_size: 2
+  train_mini_batch_size: 8
   train_batch_size: 8
   val_batch_size: 16
   num_gpus: 8
-  precision: "bf16"
+  precision: "bf16" # "bf16", "fp32"
+  use_flash_attn: false
   lora:
     lora: false
   # device: 'cuda:1'
@@ -27,14 +32,14 @@ train:
     num_epochs: 1
     max_train_samples: 500_000_000
     max_train_steps: 250_000
-    warmup_samples: 4000
+    warmup_samples: 40000
     warmup_steps_or_ratio: 1000
     val_every_sample: null
-    val_every_step: 500
+    val_every_step: 2000
     max_val_samples: 20000
     max_val_steps: 5000
     save_every_sample: null
-    save_every_step: 500
+    save_every_step: 2000
   # Optimizer settings
   max_lr: 0.0001
   weight_decay: 0.00
