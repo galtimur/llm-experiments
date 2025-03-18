@@ -1,6 +1,6 @@
+import numpy as np
 import torch
 from tqdm import tqdm
-import numpy as np
 from transformers import AutoModelForCausalLM, AutoTokenizer
 
 
@@ -21,6 +21,7 @@ def get_model_and_embed(model_name):
     mean_norm = torch.mean(filtered_norms)
 
     return model, embedding, head, model_norm, mean_norm, tokenizer
+
 
 def find_self_embeds(
     embedding: torch.Tensor, tokenizer, query_matrix: torch.Tensor | None = None
@@ -61,15 +62,20 @@ def find_self_embeds(
 
     return fail_indices.tolist(), fail_result_indices.tolist(), failed_pairs
 
-def get_shadow_ratios(fail_indices: list[int], embeddings: torch.Tensor) -> list[tuple[int, float, float, float]]:
+
+def get_shadow_ratios(
+    fail_indices: list[int], embeddings: torch.Tensor
+) -> list[tuple[int, float, float, float]]:
     shadow_ratios = []
     for ind in fail_indices:
-        max_sims = torch.sort(embeddings[ind]@embeddings.T, descending=True)[0][:3]
+        max_sims = torch.sort(embeddings[ind] @ embeddings.T, descending=True)[0][:3]
         max_sim = max_sims[0]
-        true_sim = embeddings[ind]@embeddings[ind]
+        true_sim = embeddings[ind] @ embeddings[ind]
         true_ratio = true_sim / max_sim
         max_ratio = max_sims[1] / max_sim
         max_ratio_2 = max_sims[2] / max_sim
-        shadow_ratios.append((ind, true_ratio.item(), max_ratio.item(), max_ratio_2.item()))
+        shadow_ratios.append(
+            (ind, true_ratio.item(), max_ratio.item(), max_ratio_2.item())
+        )
 
     return shadow_ratios

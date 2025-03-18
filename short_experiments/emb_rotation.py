@@ -1,10 +1,9 @@
 import torch
-
+import torch.nn.functional as F
 from data.dataloader import DataloaderFetcher
+from tqdm import tqdm
 from trainer.argparser import parse_config
 from trainer.trainer import Trainer
-import torch.nn.functional as F
-from tqdm import tqdm
 
 start_pos = 0
 end_pos = 256

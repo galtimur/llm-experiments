@@ -15,7 +15,6 @@ from transformers import AutoModelForCausalLM, AutoTokenizer
 
 
 def get_transform_matrix(A, B):
-    start_time = time()
     AtA_inv = torch.inverse(A.T @ A)
     # print(f"matrix inversion time = {time() - start_time:.2f}")
 
