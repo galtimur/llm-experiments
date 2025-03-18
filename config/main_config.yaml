@@ -4,23 +4,25 @@ general:
   wandb_entity: 'timur-galimzyanov'
   wandb_project: 'llm-experiments'
   num_workers: 1
-  checkpoints_path: '/mnt/data2/galimzyanov/llm-experiments/gpt2-zip-compression/'
+  checkpoints_path: '/mnt/data/galimzyanov/llm-experiments/gpt2-zip-compression/'
   upload_to_s3: False
 model:
-  sequence_length: 1024
-  name: "openai-community/gpt2"# "meta-llama/Meta-Llama-3.1-8B" # "HuggingFaceTB/SmolLM-135M"# "deepseek-ai/deepseek-coder-1.3b-base" # "codellama/CodeLlama-7b-hf"
-  pretrained: False
+  sequence_length: 256
+  name: "TinyLlama/TinyLlama_v1.1"
+  # "meta-llama/Meta-Llama-3.1-8B" # "HuggingFaceTB/SmolLM-135M"# "deepseek-ai/deepseek-coder-1.3b-base"
+  # "codellama/CodeLlama-7b-hf", "TinyLlama/TinyLlama_v1.1", "openai-community/gpt2"
+  pretrained: True
   use_flash_attn: true
   parameters:
     num_layers: 16
     hidden_dim: 1024
     ff_dim: 4096
 train:
-  train_mini_batch_size: 8
+  train_mini_batch_size: 1
   train_batch_size: 8
   val_batch_size: 16
   num_gpus: 8
-  precision: "bf16" # "bf16", "fp32"
+  precision: "fp32" # "bf16", "fp32"
   use_flash_attn: false
   lora:
     lora: false
