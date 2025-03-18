@@ -9,12 +9,13 @@ from tqdm import tqdm
 start_pos = 0
 end_pos = 256
 
-'''
+"""
 Projections of activations x of each layer on the head
 (SoftMax(Head(RMSNorm(x)) = vector of dictionary dimension) 
 and calculated cosine similarity with the last layer.
 Averaged over 1000 samples, activations were taken on the 256th token.
-'''
+"""
+
 
 class HeadProjector(torch.nn.Module):
     def __init__(self, model):
@@ -32,13 +33,18 @@ class HeadProjector(torch.nn.Module):
 
 def get_emb_rotation(hidden_states: tuple[torch.Tensor]):
 
-    hidden_states_proj = [projector(hidden_state[:,start_pos:end_pos]) for hidden_state in hidden_states]
+    hidden_states_proj = [
+        projector(hidden_state[:, start_pos:end_pos]) for hidden_state in hidden_states
+    ]
     start_vectors = hidden_states_proj[-1]
     hidden_states_tens = torch.stack(hidden_states_proj, dim=0)
     cosine_sim = F.cosine_similarity(hidden_states_tens, start_vectors, dim=-1)
-    cosine_sim_adjusted = (cosine_sim - cosine_sim[:1])/(cosine_sim[-1:] - cosine_sim[:1])
+    cosine_sim_adjusted = (cosine_sim - cosine_sim[:1]) / (
+        cosine_sim[-1:] - cosine_sim[:1]
+    )
 
     return cosine_sim
+
 
 if __name__ == "__main__":
     config_path = "config/main_config.yaml"
@@ -65,7 +71,7 @@ if __name__ == "__main__":
             embed_rotation = get_emb_rotation(hidden_states)
             embed_rotations.append(embed_rotation)
             i += 1
-            if i>1000:
+            if i > 1000:
                 break
     embed_rotations = torch.cat(embed_rotations, dim=1)
     embed_rotations_mean = embed_rotations.mean(dim=1)
