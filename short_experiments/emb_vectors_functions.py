@@ -3,26 +3,6 @@ import torch
 from tqdm import tqdm
 from transformers import AutoModelForCausalLM, AutoTokenizer
 
-
-def get_model_and_embed(model_name):
-
-    model = AutoModelForCausalLM.from_pretrained(model_name)
-    tokenizer = AutoTokenizer.from_pretrained(model_name)
-
-    for param in model.parameters():
-        param.requires_grad = False
-
-    embedding = model.model.embed_tokens.weight.cuda()  # Embedding layer weights
-    head = model.lm_head.weight.cuda()
-    model_norm = model.model.norm.cuda()
-
-    emb_norms = torch.norm(embedding, dim=1)
-    filtered_norms = emb_norms[emb_norms >= 10e-5]
-    mean_norm = torch.mean(filtered_norms)
-
-    return model, embedding, head, model_norm, mean_norm, tokenizer
-
-
 def find_self_embeds(
     embedding: torch.Tensor, tokenizer, query_matrix: torch.Tensor | None = None
 ) -> tuple[list[int], list[int], list]:
@@ -79,3 +59,12 @@ def get_shadow_ratios(
         )
 
     return shadow_ratios
+#
+from huggingface_hub import snapshot_download
+model_name = "meta-llama/Llama-3.1-70B"
+model_path = snapshot_download(repo_id=model_name)
+print(model_path)
+# model, embedding, head, model_norm, mean_norm, tokenizer = get_model_and_embed(
+#     model_name
+# )
+# print(model)
