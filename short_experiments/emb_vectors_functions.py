@@ -1,7 +1,7 @@
 import numpy as np
 import torch
 from tqdm import tqdm
-from transformers import AutoModelForCausalLM, AutoTokenizer
+import gc
 
 def find_self_embeds(
     embedding: torch.Tensor, tokenizer, query_matrix: torch.Tensor | None = None
@@ -40,6 +40,9 @@ def find_self_embeds(
     failed_res_emb_toks = [tokenizer.decode(idx) for idx in fail_result_indices]
     failed_pairs = list(zip(failed_emb_toks, failed_res_emb_toks))
 
+    torch.cuda.empty_cache()
+    gc.collect()
+
     return fail_indices.tolist(), fail_result_indices.tolist(), failed_pairs
 
 
@@ -58,13 +61,7 @@ def get_shadow_ratios(
             (ind, true_ratio.item(), max_ratio.item(), max_ratio_2.item())
         )
 
+    torch.cuda.empty_cache()
+    gc.collect()
+
     return shadow_ratios
-#
-from huggingface_hub import snapshot_download
-model_name = "meta-llama/Llama-3.1-70B"
-model_path = snapshot_download(repo_id=model_name)
-print(model_path)
-# model, embedding, head, model_norm, mean_norm, tokenizer = get_model_and_embed(
-#     model_name
-# )
-# print(model)

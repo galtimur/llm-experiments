@@ -81,7 +81,7 @@ def get_weight_by_name(model_name: Path, target: str) -> torch.Tensor:
         del model
         gc.collect()
 
-    return weights
+    return weights.detach()
 
 # Not used
 def get_model_and_embed(model_name):
