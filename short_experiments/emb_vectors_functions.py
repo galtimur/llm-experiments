@@ -20,7 +20,6 @@ def find_self_embeds(
     batches = [
         range(i, min(i + batch_size, end)) for i in range(start, end, batch_size)
     ]
-    eqs = []
     if query_matrix is None:
         query_matrix = embedding
     query_matrix = query_matrix.cuda()
@@ -38,7 +37,7 @@ def find_self_embeds(
 
     failed_emb_toks = [tokenizer.decode(idx) for idx in fail_indices]
     failed_res_emb_toks = [tokenizer.decode(idx) for idx in fail_result_indices]
-    failed_pairs = list(zip(failed_emb_toks, failed_res_emb_toks))
+    failed_pairs = list(zip(fail_indices, failed_emb_toks, failed_res_emb_toks))
 
     torch.cuda.empty_cache()
     gc.collect()
