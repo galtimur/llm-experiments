@@ -3,15 +3,10 @@ Looking on the matrix transformation of the input embedding layer into the lm_he
 How close we can approximate them with linear transformation?
 """
 
-from time import time
-
-# %%
 import numpy as np
 import torch
 from tqdm import tqdm
 from transformers import AutoModelForCausalLM, AutoTokenizer
-
-# %%
 
 
 def get_transform_matrix(A, B):

@@ -1,7 +1,9 @@
-import torch
 import gc
-from tqdm import tqdm
+
 import numpy as np
+import torch
+from tqdm import tqdm
+
 
 def batch_list(lst, batch_size):
     return [lst[i : i + batch_size] for i in range(0, len(lst), batch_size)]
@@ -32,7 +34,9 @@ def calc_bad_embeds(x_optim, self_emb, embeddings, mask):
     return bad_embeds, bad_embeds_ratio, np.array(is_good_embed.cpu())
 
 
-def train_vectors(n_lst, embeddings, x_optim_start=None, n_steps=100, verbose=False, use_tqdm=True):
+def train_vectors(
+    n_lst, embeddings, x_optim_start=None, n_steps=100, verbose=False, use_tqdm=True
+):
     min_bad = len(n_lst)
     X = embeddings
     self_emb = X[n_lst]

@@ -38,9 +38,9 @@ def get_emb_rotation(hidden_states: tuple[torch.Tensor]):
     start_vectors = hidden_states_proj[-1]
     hidden_states_tens = torch.stack(hidden_states_proj, dim=0)
     cosine_sim = F.cosine_similarity(hidden_states_tens, start_vectors, dim=-1)
-    cosine_sim_adjusted = (cosine_sim - cosine_sim[:1]) / (
-        cosine_sim[-1:] - cosine_sim[:1]
-    )
+    # cosine_sim_adjusted = (cosine_sim - cosine_sim[:1]) / (
+    #     cosine_sim[-1:] - cosine_sim[:1]
+    # )
 
     return cosine_sim
 

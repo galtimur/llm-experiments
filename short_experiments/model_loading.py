@@ -1,17 +1,22 @@
-import torch
-from transformers import AutoModelForCausalLM, AutoTokenizer
 import gc
-from huggingface_hub import snapshot_download
 from pathlib import Path
+
+import torch
+from huggingface_hub import snapshot_download
 from safetensors import safe_open
 from safetensors.torch import load_file
+from transformers import AutoModelForCausalLM, AutoTokenizer
 
-def find_key_for_target(data: dict[str, list[str]], target: str) -> tuple[str | None, str | None]:
+
+def find_key_for_target(
+    data: dict[str, list[str]], target: str
+) -> tuple[str | None, str | None]:
     for key, values in data.items():
         for item in values:
             if target in item:
                 return key, item
     raise KeyError(f"Key {target} was not found")
+
 
 def get_model_path(model_name):
     model_path = snapshot_download(repo_id=model_name)
@@ -49,6 +54,7 @@ def get_model_file_keys(model_path: Path) -> dict[str, list[str]]:
 
     return key_lists
 
+
 def _get_weight_by_name(model_name: Path, target: str) -> torch.Tensor:
 
     model_path = get_model_path(model_name)
@@ -65,6 +71,7 @@ def _get_weight_by_name(model_name: Path, target: str) -> torch.Tensor:
 
     return weights
 
+
 def get_weight_by_name(model_name: Path, target: str) -> torch.Tensor:
 
     try:
@@ -80,6 +87,7 @@ def get_weight_by_name(model_name: Path, target: str) -> torch.Tensor:
         gc.collect()
 
     return weights.detach()
+
 
 # Not used
 def get_model_and_embed(model_name):

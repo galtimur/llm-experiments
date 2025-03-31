@@ -1,7 +1,9 @@
+import gc
+
 import numpy as np
 import torch
 from tqdm import tqdm
-import gc
+
 
 def find_self_embeds(
     embedding: torch.Tensor, tokenizer, query_matrix: torch.Tensor | None = None
